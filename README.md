@@ -26,12 +26,12 @@ uvicorn app.main:app --reload
 ```
 
 Athena is installed directly from its GitHub repository at commit
-`9dcb0d0c1e4290829019fca6c69e85abde8d344e`; the exact immutable pin is recorded in
+`d15bc49e1deb2e4730d7df03210300a7fce7e107`; the exact immutable pin is recorded in
 `pyproject.toml` because no release tag was available when version 0.1.0 was prepared. Athena source
 is not vendored here.
 
 > **Integration note:** version 0.1.0 expects Athena to expose
-> `project_athena.observatory.build_observatory_intelligence_report`, accepting `region_key` and
+> `src.observatory.build_observatory_intelligence_report`, accepting `region_key` and
 > `catalog_path`, and returning an object with `to_dict()`. Any upstream incompatibility must be
 > resolved in Athena rather than by copying or reimplementing its internals here.
 
@@ -44,7 +44,7 @@ All settings have local defaults and may be overridden independently:
 | `ATHENA_API_NAME` | `Project Athena API` |
 | `ATHENA_API_VERSION` | `0.1.0` |
 | `ATHENA_VERSION` | pinned commit shown above |
-| `ATHENA_DEFAULT_REGION_KEY` | `southern_california` |
+| `ATHENA_DEFAULT_REGION_KEY` | `puerto_rico` |
 | `ATHENA_DEFAULT_CATALOG_PATH` | `data/catalog.csv` |
 | `ATHENA_ENVIRONMENT` | `development` |
 

@@ -8,8 +8,8 @@ from dataclasses import dataclass
 class Settings:
     api_name: str = "Project Athena API"
     api_version: str = "0.1.0"
-    athena_version: str = "9dcb0d0c1e4290829019fca6c69e85abde8d344e"
-    default_region_key: str = "southern_california"
+    athena_version: str = "d15bc49e1deb2e4730d7df03210300a7fce7e107"
+    default_region_key: str = "puerto_rico"
     default_catalog_path: str = "data/catalog.csv"
     environment_name: str = "development"
 

@@ -1,4 +1,5 @@
 import json
+from importlib import import_module
 
 import pytest
 
@@ -17,7 +18,12 @@ def test_service_invokes_unified_builder_once():
 
     service = AthenaService(builder=builder, settings=Settings())
     assert service.build_report().to_dict()
-    assert calls == [{"region_key": "southern_california", "catalog_path": "data/catalog.csv"}]
+    assert calls == [{"region_key": "puerto_rico", "catalog_path": "data/catalog.csv"}]
+
+
+def test_installed_athena_public_api_is_available():
+    module = import_module("src.observatory")
+    assert callable(module.build_observatory_intelligence_report)
 
 
 @pytest.mark.parametrize("exception", [FileNotFoundError("missing"), ValueError("bad report")])

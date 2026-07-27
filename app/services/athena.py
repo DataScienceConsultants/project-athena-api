@@ -23,7 +23,7 @@ ReportBuilder = Callable[..., AthenaReport]
 
 def _public_report_builder() -> ReportBuilder:
     """Resolve Athena lazily so health/version can run without catalog initialization."""
-    module = import_module("project_athena.observatory")
+    module = import_module("src.observatory")
     return module.build_observatory_intelligence_report
 
 
