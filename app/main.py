@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.routers import health, observatory, status, timeseries, version
+from app.routers import health, observatory, status, summary, timeseries, version
 from app.schemas.common import DiscoveryResponse
 from app.services.athena import AthenaReportUnavailableError
 
@@ -48,6 +48,7 @@ def root() -> DiscoveryResponse:
             "health": "/health",
             "version": "/version",
             "status": "/status",
+            "summary": "/summary",
             "observatory": "/observatory",
             "timeseries": "/timeseries",
         },
@@ -57,5 +58,6 @@ def root() -> DiscoveryResponse:
 app.include_router(health.router)
 app.include_router(version.router)
 app.include_router(status.router)
+app.include_router(summary.router)
 app.include_router(observatory.router)
 app.include_router(timeseries.router)

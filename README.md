@@ -53,6 +53,7 @@ All settings have local defaults and may be overridden independently:
 - `GET /health` — lightweight service health; never runs Athena.
 - `GET /version` — API, Athena, and Python runtime versions.
 - `GET /status` — concise status derived from the unified report.
+- `GET /summary` — stable, frontend-ready historical summary for Project Seismic's MVP.
 - `GET /observatory` — Athena's complete serialized unified report.
 - `GET /timeseries` — only the unified report's serialized `time_series` section.
 - `GET /` — service discovery.
@@ -61,6 +62,7 @@ Example:
 
 ```bash
 curl http://127.0.0.1:8000/status
+curl http://127.0.0.1:8000/summary
 curl http://127.0.0.1:8000/observatory
 ```
 
