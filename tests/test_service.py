@@ -44,13 +44,23 @@ def test_service_does_not_swallow_unexpected_programming_error():
 
 
 def test_all_route_responses_are_strict_json(client):
-    for path in ("/", "/health", "/version", "/status", "/observatory", "/timeseries"):
+    for path in (
+        "/",
+        "/health",
+        "/version",
+        "/status",
+        "/summary",
+        "/observatory",
+        "/timeseries",
+    ):
         json.dumps(client.get(path).json(), allow_nan=False)
 
 
 def test_openapi_contains_all_required_endpoints(client):
     paths = client.get("/openapi.json").json()["paths"]
-    assert {"/health", "/version", "/status", "/observatory", "/timeseries"} <= set(paths)
+    assert {"/health", "/version", "/status", "/summary", "/observatory", "/timeseries"} <= set(
+        paths
+    )
 
 
 def test_openapi_states_nonpredictive_service(client):

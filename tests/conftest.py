@@ -12,6 +12,7 @@ REPORT = {
     "overall_status": "historical_observations_available",
     "catalog": {"as_of_utc": "2026-01-02T03:04:05Z", "source_event_count": 12},
     "latest_anomaly": {"score": 1.25, "level": "typical"},
+    "swarm": {"count": 2},
     "time_series": {
         "frequency": "daily",
         "points": [{"timestamp": "2026-01-02T00:00:00Z", "event_count": 2}],
@@ -19,6 +20,7 @@ REPORT = {
         "metadata": {"source": "fixture"},
     },
     "report_is_nonpredictive": True,
+    "executive_summary": "Historical activity remains stable.",
     "disclaimer": "Historical observations only; nonpredictive.",
 }
 
