@@ -14,7 +14,7 @@ def test_version_is_successful(client):
 
 def test_root_discovers_required_routes(client):
     endpoints = client.get("/").json()["endpoints"]
-    assert set(endpoints.values()) == {
+    expected_endpoints = {
         "/health",
         "/version",
         "/status",
@@ -22,3 +22,4 @@ def test_root_discovers_required_routes(client):
         "/observatory",
         "/timeseries",
     }
+    assert set(endpoints.values()) == expected_endpoints
