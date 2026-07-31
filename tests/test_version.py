@@ -18,6 +18,7 @@ def test_root_discovers_required_routes(client):
         "/health",
         "/version",
         "/status",
+        "/summary",
         "/observatory",
         "/timeseries",
     }
