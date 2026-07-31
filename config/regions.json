@@ -1,0 +1,15 @@
+{
+  "default_region": "puerto_rico",
+  "regions": {
+    "puerto_rico": {
+      "name": "Puerto Rico and the Virgin Islands",
+      "bounds": {
+        "min_latitude": 17.5,
+        "max_latitude": 19.5,
+        "min_longitude": -68.5,
+        "max_longitude": -64.0
+      },
+      "default_minimum_magnitude": 1.0
+    }
+  }
+}

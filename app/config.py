@@ -3,6 +3,13 @@
 import os
 from dataclasses import dataclass
 
+LOCAL_ALLOWED_ORIGINS = (
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class Settings:
@@ -12,6 +19,19 @@ class Settings:
     default_region_key: str = "puerto_rico"
     default_catalog_path: str = "data/catalog.csv"
     environment_name: str = "development"
+    allowed_origins: tuple[str, ...] = LOCAL_ALLOWED_ORIGINS
+
+
+def _allowed_origins(value: str | None) -> tuple[str, ...]:
+    """Parse a comma-separated origin allowlist, ignoring empty entries."""
+    if value is None:
+        return LOCAL_ALLOWED_ORIGINS
+    origins = tuple(
+        dict.fromkeys(origin.strip().rstrip("/") for origin in value.split(",") if origin.strip())
+    )
+    if "*" in origins:
+        raise ValueError("ATHENA_ALLOWED_ORIGINS must contain explicit origins, not '*'")
+    return origins
 
 
 def get_settings() -> Settings:
@@ -34,4 +54,5 @@ def get_settings() -> Settings:
             "ATHENA_ENVIRONMENT",
             defaults.environment_name,
         ),
+        allowed_origins=_allowed_origins(os.getenv("ATHENA_ALLOWED_ORIGINS")),
     )
