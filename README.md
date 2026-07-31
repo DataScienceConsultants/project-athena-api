@@ -22,11 +22,13 @@ Python 3.12 is required.
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[dev]'
-uvicorn app.main:app --reload
+python -m app
+# For auto-reload during local development instead:
+uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --reload
 ```
 
 Athena is installed directly from its GitHub repository at commit
-`d15bc49e1deb2e4730d7df03210300a7fce7e107`; the exact immutable pin is recorded in
+`89166e33128aac5b1eae9c3f2e161441bd9ca744`; the exact immutable pin is recorded in
 `pyproject.toml` because no release tag was available when version 0.1.0 was prepared. Athena source
 is not vendored here.
 
@@ -34,6 +36,36 @@ is not vendored here.
 > `src.observatory.build_observatory_intelligence_report`, accepting `region_key` and
 > `catalog_path`, and returning an object with `to_dict()`. Any upstream incompatibility must be
 > resolved in Athena rather than by copying or reimplementing its internals here.
+
+## Deployment
+
+The repository includes a minimal Python 3.12 container. It installs the immutable Athena pin and
+starts Uvicorn directly (without a development reloader), binds every container interface, honors
+the platform `PORT`, and trusts forwarded proxy headers:
+
+```bash
+docker build -t project-athena-api .
+docker run --rm -p 8000:8000 \
+  -e ATHENA_ALLOWED_ORIGINS=https://datascienceconsultants.github.io \
+  project-athena-api
+```
+
+The production start command, whether or not a container is used, is:
+
+```bash
+PORT=8000 python -m app
+```
+
+### Runtime catalog strategy
+
+`data/catalog.csv` is a normalized Puerto Rico deployment catalog bundled into the image, so a new
+instance can serve `/summary` without a network request or a writable filesystem. The API passes
+that catalog to Athena's public Observatory builder and never implements analytics itself. Replace
+this snapshot during a planned data refresh using Project Athena's public catalog downloader/export
+pipeline, validate it, and deploy a new immutable image; the web process deliberately does not make
+live USGS calls. `ATHENA_DEFAULT_CATALOG_PATH` can select a mounted, independently refreshed catalog.
+The container also installs `config/regions.json` alongside Athena as a compatibility measure for
+Athena 0.4.1, whose wheel does not include that package data.
 
 ## Configuration
 
@@ -47,6 +79,20 @@ All settings have local defaults and may be overridden independently:
 | `ATHENA_DEFAULT_REGION_KEY` | `puerto_rico` |
 | `ATHENA_DEFAULT_CATALOG_PATH` | `data/catalog.csv` |
 | `ATHENA_ENVIRONMENT` | `development` |
+| `ATHENA_ALLOWED_ORIGINS` | local origins on ports `3000` and `5173` |
+| `PORT` | `8000` |
+
+### CORS
+
+`ATHENA_ALLOWED_ORIGINS` is a comma-separated exact allowlist. Localhost and `127.0.0.1` origins on
+ports 3000 and 5173 are allowed only when the variable is unset. Production should explicitly set:
+
+```bash
+ATHENA_ALLOWED_ORIGINS=https://datascienceconsultants.github.io
+```
+
+Add multiple origins with commas. Do not configure `*`: credentialed CORS requires explicit origins.
+An explicitly empty value disables cross-origin access.
 
 ## Endpoints
 
@@ -57,6 +103,15 @@ All settings have local defaults and may be overridden independently:
 - `GET /observatory` — Athena's complete serialized unified report.
 - `GET /timeseries` — only the unified report's serialized `time_series` section.
 - `GET /` — service discovery.
+
+Deployment smoke tests (each should return HTTP 200):
+
+```bash
+BASE_URL=http://127.0.0.1:8000
+curl --fail --show-error "$BASE_URL/health"
+curl --fail --show-error "$BASE_URL/version"
+curl --fail --show-error "$BASE_URL/summary"
+```
 
 Example:
 

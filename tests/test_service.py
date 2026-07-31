@@ -2,9 +2,10 @@ import json
 from importlib import import_module
 
 import pytest
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
-from app.main import app
+from app.main import app, settings
 from app.services.athena import AthenaReportUnavailableError, AthenaService
 from tests.conftest import FakeReport
 
@@ -68,7 +69,11 @@ def test_openapi_states_nonpredictive_service(client):
     assert "nonpredictive" in description
 
 
-def test_application_does_not_enable_cors_wildcard():
-    assert not any(
-        middleware.cls.__name__ == "CORSMiddleware" for middleware in app.user_middleware
-    )
+def test_application_uses_explicit_configured_cors_origins():
+    cors_middleware = [
+        middleware for middleware in app.user_middleware if middleware.cls is CORSMiddleware
+    ]
+
+    assert len(cors_middleware) == 1
+    assert cors_middleware[0].kwargs["allow_origins"] == list(settings.allowed_origins)
+    assert "*" not in cors_middleware[0].kwargs["allow_origins"]
