@@ -16,18 +16,8 @@ COPY config ./config
 COPY data ./data
 
 RUN python -m pip install --no-cache-dir . \
-    && python - <<'PY'
-from pathlib import Path
-import shutil
-import src
-
-# Athena 0.4.1's wheel does not include its regions.json package data. Install
-# this API's matching deployment configuration where Athena's public builder
-# resolves it until the upstream package includes that file.
-target = Path(src.__file__).resolve().parent.parent / "config"
-target.mkdir(exist_ok=True)
-shutil.copyfile("config/regions.json", target / "regions.json")
-PY
+    && python -c "from pathlib import Path; import shutil; import src; target = Path(src.__file__).resolve().parent.parent / 'config'; target.mkdir(exist_ok=True); shutil.copyfile('config/regions.json', target / 'regions.json')"
 
 EXPOSE 8000
+
 CMD ["python", "-m", "app"]
