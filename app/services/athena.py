@@ -5,6 +5,7 @@ from collections.abc import Callable
 from importlib import import_module
 from typing import Any, Protocol
 
+from app.catalog_readiness import CatalogNotReadyError, validate_catalog_readiness
 from app.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -41,12 +42,20 @@ class AthenaService:
     def build_report(self) -> AthenaReport:
         """Delegate scientific processing to Athena and normalize expected failures."""
         try:
+            validate_catalog_readiness(self._settings)
             builder = self._builder or _public_report_builder()
             return builder(
                 region_key=self._settings.default_region_key,
                 catalog_path=self._settings.default_catalog_path,
             )
-        except (FileNotFoundError, OSError, ValueError, ImportError, AttributeError) as exc:
+        except (
+            CatalogNotReadyError,
+            FileNotFoundError,
+            OSError,
+            ValueError,
+            ImportError,
+            AttributeError,
+        ) as exc:
             logger.exception("Project Athena could not build the unified report")
             raise AthenaReportUnavailableError from exc
 

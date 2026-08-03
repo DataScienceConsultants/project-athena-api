@@ -13,11 +13,9 @@ RUN apt-get update \
 COPY pyproject.toml README.md ./
 COPY app ./app
 COPY config ./config
-COPY data ./data
-
 RUN python -m pip install --no-cache-dir . \
     && python -c "from pathlib import Path; import shutil; import src; target = Path(src.__file__).resolve().parent.parent / 'config'; target.mkdir(exist_ok=True); shutil.copyfile('config/regions.json', target / 'regions.json')"
 
 EXPOSE 8000
 
-CMD ["python", "-m", "app"]
+CMD ["sh", "-c", "python -m app.bootstrap_catalog && exec python -m app"]

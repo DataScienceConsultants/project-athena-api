@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115,<1",
   "pydantic>=2.9,<3",
+  "requests>=2.32,<3",
   "project-athena @ git+https://github.com/DataScienceConsultants/project-athena.git@89166e33128aac5b1eae9c3f2e161441bd9ca744",
   "uvicorn[standard]>=0.32,<1",
 ]

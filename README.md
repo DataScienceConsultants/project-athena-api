@@ -58,14 +58,40 @@ PORT=8000 python -m app
 
 ### Runtime catalog strategy
 
-`data/catalog.csv` is a normalized Puerto Rico deployment catalog bundled into the image, so a new
-instance can serve `/summary` without a network request or a writable filesystem. The API passes
-that catalog to Athena's public Observatory builder and never implements analytics itself. Replace
-this snapshot during a planned data refresh using Project Athena's public catalog downloader/export
-pipeline, validate it, and deploy a new immutable image; the web process deliberately does not make
-live USGS calls. `ATHENA_DEFAULT_CATALOG_PATH` can select a mounted, independently refreshed catalog.
-The container also installs `config/regions.json` alongside Athena as a compatibility measure for
-Athena 0.4.1, whose wheel does not include that package data.
+No production catalog is checked into or bundled with the image. The old generated sample is only
+`tests/fixtures/catalog.csv` and is never a production default. Run the reproducible bootstrap:
+
+```bash
+python -m app.bootstrap_catalog
+```
+
+It resolves the configured Puerto Rico bounds, downloads through Athena's public catalog API, lets
+Athena validate and deduplicate the events, and atomically replaces
+`ATHENA_DEFAULT_CATALOG_PATH`. A failed or empty download exits nonzero and preserves an existing
+catalog; it never falls back to fixture data. The command logs its requested UTC range and event
+count. The default one-year lookback is intended to provide enough history for Observatory analysis.
+
+The container runs this command once before Uvicorn starts. Thus Cloud Run makes no USGS request per
+HTTP request, while a failed preparation prevents an instance with misleading data from becoming
+available. The container also installs `config/regions.json` alongside Athena as a compatibility
+measure for Athena 0.4.1, whose wheel does not include that package data.
+
+For Cloud Run, build and deploy while explicitly configuring the production origin and catalog
+policy (the filesystem is writable for the life of an instance):
+
+```bash
+gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT/REPOSITORY/project-athena-api
+gcloud run deploy project-athena-api \
+  --image REGION-docker.pkg.dev/PROJECT/REPOSITORY/project-athena-api \
+  --region REGION \
+  --set-env-vars ATHENA_ALLOWED_ORIGINS=https://datascienceconsultants.github.io,ATHENA_BOOTSTRAP_LOOKBACK_DAYS=365,ATHENA_CATALOG_FRESHNESS_HOURS=72
+```
+
+Cloud Run refreshes the catalog whenever it starts a new instance. To refresh a running deployment
+predictably, deploy a new revision (for example, update `ATHENA_BOOTSTRAP_END_UTC` or use
+`gcloud run services update project-athena-api --update-env-vars ATHENA_BOOTSTRAP_END_UTC=...`).
+Outside Cloud Run, rerun the bootstrap command before restarting the API. Do not refresh by calling
+an analytical endpoint.
 
 ## Configuration
 
@@ -78,6 +104,10 @@ All settings have local defaults and may be overridden independently:
 | `ATHENA_VERSION` | pinned commit shown above |
 | `ATHENA_DEFAULT_REGION_KEY` | `puerto_rico` |
 | `ATHENA_DEFAULT_CATALOG_PATH` | `data/catalog.csv` |
+| `ATHENA_BOOTSTRAP_LOOKBACK_DAYS` | `365` |
+| `ATHENA_BOOTSTRAP_START_UTC` | unset; overrides lookback when set |
+| `ATHENA_BOOTSTRAP_END_UTC` | current UTC time |
+| `ATHENA_CATALOG_FRESHNESS_HOURS` | `72` |
 | `ATHENA_ENVIRONMENT` | `development` |
 | `ATHENA_ALLOWED_ORIGINS` | local origins on ports `3000` and `5173` |
 | `PORT` | `8000` |
@@ -104,13 +134,27 @@ An explicitly empty value disables cross-origin access.
 - `GET /timeseries` — only the unified report's serialized `time_series` section.
 - `GET /` — service discovery.
 
-Deployment smoke tests (each should return HTTP 200):
+Analytical endpoints validate that the catalog exists, has at least one event, and its newest event
+is no older than `ATHENA_CATALOG_FRESHNESS_HOURS`. Missing, empty, malformed, or stale catalogs get
+the same safe HTTP 503 response; `/health` remains lightweight liveness and does not read a catalog.
+
+Deployment smoke tests (the first three should return HTTP 200):
 
 ```bash
 BASE_URL=http://127.0.0.1:8000
 curl --fail --show-error "$BASE_URL/health"
 curl --fail --show-error "$BASE_URL/version"
 curl --fail --show-error "$BASE_URL/summary"
+curl --fail --show-error "$BASE_URL/observatory"
+curl --fail --show-error "$BASE_URL/timeseries"
+```
+
+After intentionally pointing `ATHENA_DEFAULT_CATALOG_PATH` at a missing file and restarting, verify
+that liveness stays 200 while analytics safely return 503:
+
+```bash
+curl --fail --show-error "$BASE_URL/health"
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' "$BASE_URL/summary")" = 503
 ```
 
 Example:

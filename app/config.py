@@ -18,6 +18,7 @@ class Settings:
     athena_version: str = "f21ab8990c4253dbaf708d1f9b511023ee843fec"
     default_region_key: str = "puerto_rico"
     default_catalog_path: str = "data/catalog.csv"
+    catalog_freshness_hours: int = 72
     environment_name: str = "development"
     allowed_origins: tuple[str, ...] = LOCAL_ALLOWED_ORIGINS
 
@@ -49,6 +50,9 @@ def get_settings() -> Settings:
         default_catalog_path=os.getenv(
             "ATHENA_DEFAULT_CATALOG_PATH",
             defaults.default_catalog_path,
+        ),
+        catalog_freshness_hours=int(
+            os.getenv("ATHENA_CATALOG_FRESHNESS_HOURS", defaults.catalog_freshness_hours)
         ),
         environment_name=os.getenv(
             "ATHENA_ENVIRONMENT",
