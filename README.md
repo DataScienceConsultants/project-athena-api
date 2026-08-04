@@ -58,8 +58,9 @@ PORT=8000 python -m app
 
 ### Runtime catalog strategy
 
-No production catalog is checked into or bundled with the image. The old generated sample is only
-`tests/fixtures/catalog.csv` and is never a production default. Run the reproducible bootstrap:
+No production catalog is checked into source control. The old generated sample is only
+`tests/fixtures/catalog.csv` and is never a production default or copied into the image. Prepare a
+real catalog as a one-time operation (and whenever refreshing it) with:
 
 ```bash
 python -m app.bootstrap_catalog
@@ -71,27 +72,46 @@ Athena validate and deduplicate the events, and atomically replaces
 catalog; it never falls back to fixture data. The command logs its requested UTC range and event
 count. The default one-year lookback is intended to provide enough history for Observatory analysis.
 
-The container runs this command once before Uvicorn starts. Thus Cloud Run makes no USGS request per
-HTTP request, while a failed preparation prevents an instance with misleading data from becoming
-available. The container also installs `config/regions.json` alongside Athena as a compatibility
-measure for Athena 0.4.1, whose wheel does not include that package data.
+Bootstrap is deliberately **not** part of web startup: Cloud Run may autoscale many instances, and
+each instance must start from the same prepared snapshot rather than perform a full external USGS
+download. The web command only starts the API. It validates readiness before analytical requests and
+returns a safe 503 for missing or stale data; it never downloads data. The container also installs
+`config/regions.json` alongside Athena as a compatibility measure for Athena 0.4.1, whose wheel does
+not include that package data.
 
-For Cloud Run, build and deploy while explicitly configuring the production origin and catalog
-policy (the filesystem is writable for the life of an instance):
+The MVP deployment workflow prepares a real snapshot before `docker build`, validates freshness,
+and includes `data/catalog.csv` in the image. The helper stops immediately if download or validation
+fails, so Docker cannot accidentally build with an absent, stale, empty, or synthetic catalog:
 
 ```bash
-gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT/REPOSITORY/project-athena-api
-gcloud run deploy project-athena-api \
-  --image REGION-docker.pkg.dev/PROJECT/REPOSITORY/project-athena-api \
-  --region REGION \
-  --set-env-vars ATHENA_ALLOWED_ORIGINS=https://datascienceconsultants.github.io,ATHENA_BOOTSTRAP_LOOKBACK_DAYS=365,ATHENA_CATALOG_FRESHNESS_HOURS=72
+./scripts/build_deployment_image.sh \
+  REGION-docker.pkg.dev/PROJECT/REPOSITORY/project-athena-api:$(git rev-parse --short HEAD)
 ```
 
-Cloud Run refreshes the catalog whenever it starts a new instance. To refresh a running deployment
-predictably, deploy a new revision (for example, update `ATHENA_BOOTSTRAP_END_UTC` or use
-`gcloud run services update project-athena-api --update-env-vars ATHENA_BOOTSTRAP_END_UTC=...`).
-Outside Cloud Run, rerun the bootstrap command before restarting the API. Do not refresh by calling
-an analytical endpoint.
+The generated `data/catalog.csv` is ignored by Git and remains a build input only. Do not replace it
+with `tests/fixtures/catalog.csv`.
+
+For Cloud Run, authenticate Docker, run the helper, push that successfully validated image, then
+deploy it while explicitly configuring the production origin and freshness policy:
+
+```bash
+IMAGE=REGION-docker.pkg.dev/PROJECT/REPOSITORY/project-athena-api:$(git rev-parse --short HEAD)
+./scripts/build_deployment_image.sh "$IMAGE"
+docker push "$IMAGE"
+gcloud run deploy project-athena-api \
+  --image "$IMAGE" \
+  --region REGION \
+  --set-env-vars ATHENA_ALLOWED_ORIGINS=https://datascienceconsultants.github.io,ATHENA_CATALOG_FRESHNESS_HOURS=72
+```
+
+To refresh, rerun the helper with a new immutable image tag, push it, and deploy a new Cloud Run
+revision. All autoscaled instances of that revision then use the identical prepared snapshot. Do not
+refresh by restarting the API or calling an analytical endpoint.
+
+For a future long-lived architecture, run the bootstrap as a dedicated **Cloud Run Job** triggered by
+**Cloud Scheduler**, publish the atomic catalog to versioned **Cloud Storage**, and promote a
+validated object for API revisions to consume. That separates scheduled ingestion from serving
+without making instance startup dependent on USGS availability.
 
 ## Configuration
 

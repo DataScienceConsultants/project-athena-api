@@ -7,3 +7,6 @@ dist/
 build/
 *.egg-info/
 .env
+
+# Real deployment catalogs are generated before image builds, never committed.
+data/catalog.csv
