@@ -1,7 +1,8 @@
 from copy import deepcopy
 
+from app.config import Settings
 from app.main import app
-from app.services.athena import AthenaReportUnavailableError, get_athena_service
+from app.services.athena import AthenaReportUnavailableError, AthenaService, get_athena_service
 from tests.conftest import REPORT, FakeReport
 
 
@@ -59,3 +60,31 @@ def test_summary_returns_safe_503_when_report_is_unavailable(client):
 def test_summary_builds_unified_report_once(client, fake_service):
     assert client.get("/summary").status_code == 200
     assert fake_service.calls == 1
+
+
+def test_summary_returns_safe_503_for_missing_catalog(client, tmp_path):
+    service = AthenaService(
+        builder=lambda **kwargs: FakeReport(),
+        settings=Settings(default_catalog_path=str(tmp_path / "missing.csv")),
+    )
+    app.dependency_overrides[get_athena_service] = lambda: service
+
+    response = client.get("/summary")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "athena_report_unavailable"
+
+
+def test_summary_returns_safe_503_for_stale_catalog(client, tmp_path):
+    catalog = tmp_path / "catalog.csv"
+    catalog.write_text("event_time_utc\n2020-01-01T00:00:00Z\n", encoding="utf-8")
+    service = AthenaService(
+        builder=lambda **kwargs: FakeReport(),
+        settings=Settings(default_catalog_path=str(catalog), catalog_freshness_hours=72),
+    )
+    app.dependency_overrides[get_athena_service] = lambda: service
+
+    response = client.get("/summary")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "athena_report_unavailable"
