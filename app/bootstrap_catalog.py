@@ -13,7 +13,8 @@ from typing import Any
 from app.config import Settings, get_settings
 
 LOGGER = logging.getLogger(__name__)
-DEFAULT_LOOKBACK_DAYS = 365
+DEFAULT_LOOKBACK_DAYS = 3650
+DEFAULT_CHUNK_DAYS = 365
 
 
 def _parse_time(value: str, variable: str) -> datetime:
@@ -45,6 +46,27 @@ def bootstrap_dates(*, now: datetime | None = None) -> tuple[datetime, datetime]
     return start, end
 
 
+def bootstrap_chunks(start: datetime, end: datetime) -> tuple[tuple[datetime, datetime], ...]:
+    """Return deterministic, consecutive half-open ranges for the bootstrap interval."""
+    raw_chunk_days = os.getenv("ATHENA_BOOTSTRAP_CHUNK_DAYS", str(DEFAULT_CHUNK_DAYS))
+    try:
+        chunk_days = int(raw_chunk_days)
+    except ValueError as exc:
+        raise ValueError("ATHENA_BOOTSTRAP_CHUNK_DAYS must be a positive integer") from exc
+    if chunk_days <= 0:
+        raise ValueError("ATHENA_BOOTSTRAP_CHUNK_DAYS must be greater than zero")
+
+    chunks: list[tuple[datetime, datetime]] = []
+    chunk_start = start.astimezone(UTC)
+    interval_end = end.astimezone(UTC)
+    width = timedelta(days=chunk_days)
+    while chunk_start < interval_end:
+        chunk_end = min(chunk_start + width, interval_end)
+        chunks.append((chunk_start, chunk_end))
+        chunk_start = chunk_end
+    return tuple(chunks)
+
+
 def _region(region_key: str) -> dict[str, Any]:
     configuration = json.loads(Path("config/regions.json").read_text(encoding="utf-8"))
     try:
@@ -60,21 +82,70 @@ def prepare_catalog(
     now: datetime | None = None,
 ) -> tuple[datetime, datetime, int]:
     """Download with Athena, then atomically replace the production catalog."""
-    from src.catalog import CatalogQuery, GeographicBounds, export_csv, ingest_historical_catalog
+    from src.catalog import (
+        CatalogIngestionResult,
+        CatalogQuery,
+        GeographicBounds,
+        IngestionSummary,
+        export_csv,
+        ingest_historical_catalog,
+    )
+    from src.catalog.normalization import deduplicate_events
 
     selected = settings or get_settings()
     start, end = bootstrap_dates(now=now)
     region = _region(selected.default_region_key)
     bounds = GeographicBounds(**region["bounds"])
-    query = CatalogQuery(
-        start_time=start,
-        end_time=end,
-        bounds=bounds,
-        minimum_magnitude=float(region["default_minimum_magnitude"]),
-    )
-    result = ingest_historical_catalog(query, client=client)
-    if not result.events:
+    minimum_magnitude = float(region["default_minimum_magnitude"])
+    events = []
+    summaries = []
+    for chunk_start, chunk_end in bootstrap_chunks(start, end):
+        query = CatalogQuery(
+            start_time=chunk_start,
+            end_time=chunk_end,
+            bounds=bounds,
+            minimum_magnitude=minimum_magnitude,
+        )
+        try:
+            chunk_result = ingest_historical_catalog(query, client=client)
+        except Exception as exc:
+            raise RuntimeError(
+                "Catalog ingestion failed for chunk "
+                f"{chunk_start.isoformat()} to {chunk_end.isoformat()}"
+            ) from exc
+        events.extend(chunk_result.events)
+        summaries.append(chunk_result.summary)
+        LOGGER.info(
+            "Catalog chunk: %s to %s; %s events",
+            chunk_start.isoformat(),
+            chunk_end.isoformat(),
+            len(chunk_result.events),
+        )
+
+    deduplicated, cross_chunk_duplicates = deduplicate_events(events)
+    if not deduplicated:
         raise ValueError("Athena returned an empty catalog; existing catalog was preserved")
+
+    result = CatalogIngestionResult(
+        events=tuple(deduplicated),
+        summary=IngestionSummary(
+            requested_count=sum(summary.requested_count for summary in summaries),
+            accepted_count=sum(summary.accepted_count for summary in summaries),
+            excluded_incomplete_count=sum(
+                summary.excluded_incomplete_count for summary in summaries
+            ),
+            excluded_invalid_count=sum(summary.excluded_invalid_count for summary in summaries),
+            duplicate_count=(
+                sum(summary.duplicate_count for summary in summaries) + cross_chunk_duplicates
+            ),
+            final_count=len(deduplicated),
+            start_time=start,
+            end_time=end,
+            minimum_magnitude=minimum_magnitude,
+            bounds=bounds,
+            source="USGS",
+        ),
+    )
 
     destination = Path(selected.default_catalog_path)
     destination.parent.mkdir(parents=True, exist_ok=True)

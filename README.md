@@ -69,8 +69,21 @@ python -m app.bootstrap_catalog
 It resolves the configured Puerto Rico bounds, downloads through Athena's public catalog API, lets
 Athena validate and deduplicate the events, and atomically replaces
 `ATHENA_DEFAULT_CATALOG_PATH`. A failed or empty download exits nonzero and preserves an existing
-catalog; it never falls back to fixture data. The command logs its requested UTC range and event
-count. The default one-year lookback is intended to provide enough history for Observatory analysis.
+catalog; it never falls back to fixture data. **Never delete `data/catalog.csv` before running the
+bootstrap**: the existing file is the safe fallback if any download fails. The default rolling
+10-year interval is downloaded in consecutive one-year chunks to stay below upstream result limits.
+Each chunk may be empty, and boundary duplicates are resolved by Athena before one chronological CSV
+is atomically promoted. The command logs every requested UTC chunk and its event count.
+
+The interval and chunk width can be overridden. For example, to retain the previous rolling one-year
+bootstrap behavior:
+
+```bash
+ATHENA_BOOTSTRAP_LOOKBACK_DAYS=365 python -m app.bootstrap_catalog
+```
+
+Set `ATHENA_BOOTSTRAP_START_UTC` and `ATHENA_BOOTSTRAP_END_UTC` to ISO-8601 timestamps with UTC
+offsets for a fixed interval. An explicit start takes precedence over the rolling lookback.
 
 Bootstrap is deliberately **not** part of web startup: Cloud Run may autoscale many instances, and
 each instance must start from the same prepared snapshot rather than perform a full external USGS
@@ -124,7 +137,8 @@ All settings have local defaults and may be overridden independently:
 | `ATHENA_VERSION` | pinned commit shown above |
 | `ATHENA_DEFAULT_REGION_KEY` | `puerto_rico` |
 | `ATHENA_DEFAULT_CATALOG_PATH` | `data/catalog.csv` |
-| `ATHENA_BOOTSTRAP_LOOKBACK_DAYS` | `365` |
+| `ATHENA_BOOTSTRAP_LOOKBACK_DAYS` | `3650` (rolling 10 years) |
+| `ATHENA_BOOTSTRAP_CHUNK_DAYS` | `365` |
 | `ATHENA_BOOTSTRAP_START_UTC` | unset; overrides lookback when set |
 | `ATHENA_BOOTSTRAP_END_UTC` | current UTC time |
 | `ATHENA_CATALOG_FRESHNESS_HOURS` | `72` |
