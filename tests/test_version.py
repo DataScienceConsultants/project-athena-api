@@ -21,5 +21,6 @@ def test_root_discovers_required_routes(client):
         "/summary",
         "/observatory",
         "/timeseries",
+        "/timeseries/chart",
     }
     assert set(endpoints.values()) == expected_endpoints

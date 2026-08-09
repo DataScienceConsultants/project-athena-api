@@ -8,7 +8,17 @@ def test_timeseries_returns_only_time_series(client):
 
 
 def test_timeseries_has_exact_top_level_fields(client):
-    assert set(client.get("/timeseries").json()) == {"frequency", "points", "trend", "metadata"}
+    assert set(client.get("/timeseries").json()) == {
+        "analysis_start",
+        "analysis_end",
+        "frequency",
+        "source_event_count",
+        "available_period_count",
+        "anomaly_results",
+        "points",
+        "trend",
+        "metadata",
+    }
 
 
 def test_timeseries_preserves_point_timestamp(client):

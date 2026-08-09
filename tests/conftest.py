@@ -14,7 +14,19 @@ REPORT = {
     "latest_anomaly": {"score": 1.25, "level": "typical"},
     "swarm": {"count": 2},
     "time_series": {
+        "analysis_start": "2026-01-02T00:00:00Z",
+        "analysis_end": "2026-01-03T00:00:00Z",
         "frequency": "daily",
+        "source_event_count": 12,
+        "available_period_count": 1,
+        "anomaly_results": [
+            {
+                "current_start": "2026-01-02T00:00:00Z",
+                "score": 1.25,
+                "level": "typical",
+                "metric_scores": {},
+            }
+        ],
         "points": [{"timestamp": "2026-01-02T00:00:00Z", "event_count": 2}],
         "trend": {"direction": "stable", "strength": "weak"},
         "metadata": {"source": "fixture"},
