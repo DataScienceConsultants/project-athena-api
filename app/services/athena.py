@@ -4,7 +4,7 @@ import json
 import logging
 from collections.abc import Callable
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from importlib import import_module
 from pathlib import Path
 from typing import Any, Protocol
@@ -87,6 +87,11 @@ class AthenaService:
             )
             if generated_at.tzinfo is None or cached_as_of.tzinfo is None:
                 raise ValueError("Snapshot timestamps must include an offset")
+            freshness_cutoff = datetime.now(UTC) - timedelta(
+                hours=self._settings.catalog_freshness_hours
+            )
+            if generated_at.astimezone(UTC) < freshness_cutoff:
+                raise ValueError("Snapshot generation timestamp is stale")
             if generated_at.astimezone(UTC) < cached_as_of.astimezone(UTC):
                 raise ValueError("Snapshot generation timestamp predates catalog")
             if cached_as_of.astimezone(UTC) != catalog_as_of.astimezone(UTC):
