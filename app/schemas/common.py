@@ -1,5 +1,6 @@
 """Response models owned by the delivery layer."""
 
+from datetime import date
 from typing import Any
 
 from pydantic import BaseModel
@@ -46,6 +47,29 @@ class SummaryResponse(BaseModel):
     executive_summary: str
     disclaimer: str
     report_is_nonpredictive: bool
+
+
+class ChartPoint(BaseModel):
+    """Compact projection of one Athena anomaly result for chart rendering."""
+
+    date: date
+    anomaly_score: float | None
+    anomaly_level: str
+    event_count: float | None
+    maximum_magnitude: float | None
+    total_energy_joules: float | None
+    mean_depth_km: float | None
+
+
+class ChartTimeseriesResponse(BaseModel):
+    """Frontend-oriented historical series backed by Athena's unified report."""
+
+    analysis_start: str | None
+    analysis_end: str | None
+    frequency: str
+    source_event_count: int
+    available_period_count: int
+    points: list[ChartPoint]
 
 
 class ErrorDetail(BaseModel):

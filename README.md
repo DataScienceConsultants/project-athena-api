@@ -166,6 +166,8 @@ An explicitly empty value disables cross-origin access.
 - `GET /summary` — stable, frontend-ready historical summary for Project Seismic's MVP.
 - `GET /observatory` — Athena's complete serialized unified report.
 - `GET /timeseries` — only the unified report's serialized `time_series` section.
+- `GET /timeseries/chart` — compact daily chart data projected from Athena anomaly results. An
+  optional positive `days` query parameter returns the most recent N available points.
 - `GET /` — service discovery.
 
 Analytical endpoints validate that the catalog exists, has at least one event, and its newest event
@@ -181,6 +183,7 @@ curl --fail --show-error "$BASE_URL/version"
 curl --fail --show-error "$BASE_URL/summary"
 curl --fail --show-error "$BASE_URL/observatory"
 curl --fail --show-error "$BASE_URL/timeseries"
+curl --fail --show-error "$BASE_URL/timeseries/chart?days=30"
 ```
 
 After intentionally pointing `ATHENA_DEFAULT_CATALOG_PATH` at a missing file and restarting, verify
@@ -198,6 +201,23 @@ curl http://127.0.0.1:8000/status
 curl http://127.0.0.1:8000/summary
 curl http://127.0.0.1:8000/observatory
 ```
+
+Frontend clients can request all available history or bound the response for a chart without
+changing or aggregating Athena's observations:
+
+```javascript
+const response = await fetch(`${apiBase}/timeseries/chart?days=90`);
+if (!response.ok) throw new Error(`Chart request failed: ${response.status}`);
+const { analysis_start, analysis_end, frequency, points } = await response.json();
+
+// points are oldest-to-newest and contain only date, anomaly_score, anomaly_level,
+// event_count, maximum_magnitude, total_energy_joules, and mean_depth_km.
+renderChart({ analysis_start, analysis_end, frequency, points });
+```
+
+Omit `days` for the complete available history (for example, `GET /timeseries/chart`). Values for
+unavailable metrics are JSON `null`; they are never replaced with zero. Invalid values such as
+`days=0` or `days=-1` receive FastAPI's standard HTTP 422 validation response.
 
 If the configured catalog/report is unavailable, analytical endpoints return HTTP 503 with a stable,
 safe JSON error. OpenAPI documentation is available at `/docs`.

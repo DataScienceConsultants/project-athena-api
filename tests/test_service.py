@@ -56,15 +56,22 @@ def test_all_route_responses_are_strict_json(client):
         "/summary",
         "/observatory",
         "/timeseries",
+        "/timeseries/chart",
     ):
         json.dumps(client.get(path).json(), allow_nan=False)
 
 
 def test_openapi_contains_all_required_endpoints(client):
     paths = client.get("/openapi.json").json()["paths"]
-    assert {"/health", "/version", "/status", "/summary", "/observatory", "/timeseries"} <= set(
-        paths
-    )
+    assert {
+        "/health",
+        "/version",
+        "/status",
+        "/summary",
+        "/observatory",
+        "/timeseries",
+        "/timeseries/chart",
+    } <= set(paths)
 
 
 def test_openapi_states_nonpredictive_service(client):
