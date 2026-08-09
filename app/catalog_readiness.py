@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -14,10 +14,8 @@ class CatalogNotReadyError(RuntimeError):
     """The configured production catalog cannot safely serve analytics."""
 
 
-def validate_catalog_readiness(
-    settings: Settings, *, now: datetime | None = None
-) -> tuple[datetime, int]:
-    """Return the newest event and count, or reject missing, empty, or stale data."""
+def validate_catalog_readiness(settings: Settings) -> tuple[datetime, int]:
+    """Return catalog identity, rejecting missing, unreadable, or empty data."""
     path = Path(settings.default_catalog_path)
     if not path.is_file():
         raise CatalogNotReadyError(f"Catalog is missing: {path}")
@@ -34,10 +32,5 @@ def validate_catalog_readiness(
     if pd.isna(newest):
         raise CatalogNotReadyError(f"Catalog contains no valid event timestamps: {path}")
 
-    current_time = now or datetime.now(UTC)
     newest_time = newest.to_pydatetime()
-    if newest_time < current_time - timedelta(hours=settings.catalog_freshness_hours):
-        raise CatalogNotReadyError(
-            f"Catalog is stale: newest event is {newest_time.isoformat()}"
-        )
     return newest_time, len(catalog)

@@ -1,13 +1,15 @@
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import pytest
+from fastapi.testclient import TestClient
 
 from app.build_report_snapshot import build_report_snapshot
 from app.config import Settings
-from app.services.athena import AthenaReportUnavailableError, AthenaService
+from app.main import app
+from app.services.athena import AthenaReportUnavailableError, AthenaService, get_athena_service
 from tests.conftest import FakeReport
 
 CATALOG_TIME = datetime.now(UTC).replace(microsecond=0)
@@ -97,6 +99,38 @@ def test_service_loads_valid_snapshot_without_calling_builder(tmp_path):
     service = AthenaService(settings=settings, builder=forbidden)
     assert service.build_report().to_dict() == FakeReport().to_dict()
     assert service.build_report().to_dict() == FakeReport().to_dict()
+
+
+def test_quiet_period_with_old_catalog_and_fresh_snapshot_is_ready(tmp_path):
+    settings = _settings(tmp_path)
+    old_event = datetime.now(UTC) - timedelta(weeks=3)
+    pd.DataFrame(
+        {"event_time_utc": [old_event.isoformat()], "event_id": ["quiet-period"]}
+    ).to_csv(settings.default_catalog_path, index=False)
+    build_report_snapshot(settings, builder=lambda **kwargs: FakeReport())
+
+    service = AthenaService(settings=settings)
+    assert service.build_report().to_dict() == FakeReport().to_dict()
+    app.dependency_overrides[get_athena_service] = lambda: service
+    try:
+        with TestClient(app) as client:
+            response = client.get("/observatory")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+
+
+def test_service_rejects_stale_snapshot_even_when_catalog_matches(tmp_path):
+    settings = _settings(tmp_path)
+    payload = build_report_snapshot(settings, builder=lambda **kwargs: FakeReport())
+    payload["metadata"]["generated_at_utc"] = (
+        datetime.now(UTC) - timedelta(hours=settings.catalog_freshness_hours + 1)
+    ).isoformat()
+    with open(settings.report_snapshot_path, "w", encoding="utf-8") as snapshot:
+        json.dump(payload, snapshot)
+
+    with pytest.raises(AthenaReportUnavailableError):
+        AthenaService(settings=settings).build_report()
 
 
 @pytest.mark.parametrize(

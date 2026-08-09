@@ -182,12 +182,18 @@ An explicitly empty value disables cross-origin access.
   optional positive `days` query parameter returns the most recent N available points.
 - `GET /` — service discovery.
 
-Analytical endpoints validate that the catalog exists, has at least one event, and its newest event
-is no older than `ATHENA_CATALOG_FRESHNESS_HOURS`. They also require snapshot region, event count,
-latest catalog timestamp, structure, and file age to agree with that catalog. Missing, empty,
-malformed, stale, or mismatched inputs get the same safe HTTP 503 response; `/health` and `/version`
-remain lightweight and do not read either file. Repeated analytical requests deserialize the cached
-report and never invoke Athena's scientific builder.
+Analytical endpoints validate that the catalog exists, is readable, and has at least one event. The
+snapshot metadata's `generated_at_utc` is the operational freshness signal and must be no older than
+`ATHENA_CATALOG_FRESHNESS_HOURS`. In contrast, `catalog_as_of_utc` is scientific metadata: it records
+the newest earthquake observation in the catalog and is not itself a freshness gate. A recently
+generated snapshot can therefore remain ready during a quiet seismic period even when its newest
+event is days or weeks old.
+
+The snapshot region, event count, `catalog_as_of_utc`, report structure, and file age must also agree
+with the catalog and configuration. Missing, empty, malformed, stale, or mismatched inputs get the
+same safe HTTP 503 response; `/health` and `/version` remain lightweight and do not read either file.
+Repeated analytical requests deserialize the cached report and never invoke Athena's scientific
+builder.
 
 Deployment smoke tests (the first three should return HTTP 200):
 
