@@ -1,5 +1,5 @@
 #!/bin/sh
-# Prepare and validate a real catalog before building the deployable image.
+# Prepare and validate a matched catalog/report pair before building the image.
 set -eu
 
 if [ "$#" -ne 1 ]; then
@@ -9,7 +9,8 @@ fi
 
 # Dockerfile deliberately copies this production path and never copies tests/fixtures.
 export ATHENA_DEFAULT_CATALOG_PATH=data/catalog.csv
+export ATHENA_REPORT_SNAPSHOT_PATH=data/observatory_report.json
 
 python -m app.bootstrap_catalog
-python -c 'from app.catalog_readiness import validate_catalog_readiness; from app.config import get_settings; newest, count = validate_catalog_readiness(get_settings()); print(f"Validated catalog: {count} events; newest event: {newest.isoformat()}")'
+python -c 'from app.services.athena import AthenaService; report = AthenaService().build_report().to_dict(); print(f"Validated report snapshot: {len(report)} top-level fields")'
 docker build --tag "$1" .

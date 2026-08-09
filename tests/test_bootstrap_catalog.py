@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -9,6 +10,7 @@ from app.bootstrap_catalog import (
     bootstrap_chunks,
     bootstrap_dates,
     prepare_catalog,
+    prepare_catalog_and_snapshot,
 )
 from app.config import Settings
 
@@ -167,3 +169,59 @@ def test_existing_one_year_override_still_works(monkeypatch, tmp_path):
     assert (end - start).days == 365
     assert count == 1
     assert len(client.queries) == 1
+
+
+def test_full_preparation_promotes_only_matched_pair(monkeypatch, tmp_path):
+    catalog = tmp_path / "catalog.csv"
+    snapshot = tmp_path / "report.json"
+    catalog.write_text("old catalog", encoding="utf-8")
+    snapshot.write_text("old report", encoding="utf-8")
+    settings = Settings(
+        default_catalog_path=str(catalog), report_snapshot_path=str(snapshot)
+    )
+
+    def prepare(candidate_settings, **kwargs):
+        pd.DataFrame({"event_time_utc": [NOW.isoformat()]}).to_csv(
+            candidate_settings.default_catalog_path, index=False
+        )
+        return NOW - timedelta(days=1), NOW, 1
+
+    def build(candidate_settings, *, destination, **kwargs):
+        assert candidate_settings.default_catalog_path != str(catalog)
+        assert destination != snapshot
+        destination.write_text("new matched report", encoding="utf-8")
+
+    monkeypatch.setattr("app.bootstrap_catalog.prepare_catalog", prepare)
+    monkeypatch.setattr("app.build_report_snapshot.build_report_snapshot", build)
+    assert prepare_catalog_and_snapshot(settings) == (NOW - timedelta(days=1), NOW, 1)
+    assert "event_time_utc" in catalog.read_text(encoding="utf-8")
+    assert snapshot.read_text(encoding="utf-8") == "new matched report"
+
+
+@pytest.mark.parametrize("failure_stage", ["catalog", "report"])
+def test_full_preparation_failure_preserves_both_files(monkeypatch, tmp_path, failure_stage):
+    catalog = tmp_path / "catalog.csv"
+    snapshot = tmp_path / "report.json"
+    catalog.write_text("old catalog", encoding="utf-8")
+    snapshot.write_text("old report", encoding="utf-8")
+    settings = Settings(
+        default_catalog_path=str(catalog), report_snapshot_path=str(snapshot)
+    )
+
+    def prepare(candidate_settings, **kwargs):
+        if failure_stage == "catalog":
+            raise RuntimeError("ingestion failed")
+        Path(candidate_settings.default_catalog_path).write_text(
+            "new catalog", encoding="utf-8"
+        )
+        return NOW, NOW, 1
+
+    def build(*args, **kwargs):
+        raise RuntimeError("report failed")
+
+    monkeypatch.setattr("app.bootstrap_catalog.prepare_catalog", prepare)
+    monkeypatch.setattr("app.build_report_snapshot.build_report_snapshot", build)
+    with pytest.raises(RuntimeError):
+        prepare_catalog_and_snapshot(settings)
+    assert catalog.read_text(encoding="utf-8") == "old catalog"
+    assert snapshot.read_text(encoding="utf-8") == "old report"

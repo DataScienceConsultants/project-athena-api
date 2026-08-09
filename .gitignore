@@ -10,3 +10,4 @@ build/
 
 # Real deployment catalogs are generated before image builds, never committed.
 data/catalog.csv
+data/observatory_report.json

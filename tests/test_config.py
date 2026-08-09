@@ -23,3 +23,8 @@ def test_allowed_origins_reject_wildcard(monkeypatch):
     monkeypatch.setenv("ATHENA_ALLOWED_ORIGINS", "*")
     with pytest.raises(ValueError, match="explicit origins"):
         get_settings()
+
+
+def test_report_snapshot_path_is_configurable(monkeypatch):
+    monkeypatch.setenv("ATHENA_REPORT_SNAPSHOT_PATH", "/prepared/report.json")
+    assert get_settings().report_snapshot_path == "/prepared/report.json"
