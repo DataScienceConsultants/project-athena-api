@@ -59,6 +59,7 @@ def root() -> DiscoveryResponse:
             "summary": "/summary",
             "observatory": "/observatory",
             "timeseries": "/timeseries",
+            "chart_timeseries": "/timeseries/chart",
         },
     )
 
