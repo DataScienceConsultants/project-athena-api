@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import tempfile
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -183,10 +184,99 @@ def prepare_catalog(
     return start, end, len(result.events)
 
 
+def _promote_catalog_and_snapshot(
+    temporary_catalog: Path,
+    catalog: Path,
+    temporary_snapshot: Path,
+    snapshot: Path,
+) -> None:
+    """Promote a matched pair, rolling both files back if either replacement fails."""
+    catalog.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    backups: dict[Path, Path] = {}
+    promoted: list[Path] = []
+    try:
+        for destination in (catalog, snapshot):
+            if destination.exists():
+                with tempfile.NamedTemporaryFile(
+                    dir=destination.parent,
+                    prefix=f".{destination.name}.backup.",
+                    delete=False,
+                ) as backup:
+                    backup_path = Path(backup.name)
+                os.replace(destination, backup_path)
+                backups[destination] = backup_path
+        # Catalog first: an interrupted process can only cause snapshot validation to reject
+        # the old report. The reverse ordering could briefly serve new science for old input.
+        os.replace(temporary_catalog, catalog)
+        promoted.append(catalog)
+        os.replace(temporary_snapshot, snapshot)
+        promoted.append(snapshot)
+    except BaseException:
+        for destination in reversed(promoted):
+            destination.unlink(missing_ok=True)
+        for destination, backup in backups.items():
+            if backup.exists():
+                os.replace(backup, destination)
+        raise
+    finally:
+        for backup in backups.values():
+            backup.unlink(missing_ok=True)
+
+
+def prepare_catalog_and_snapshot(
+    settings: Settings | None = None,
+    *,
+    client: Any = None,
+    now: datetime | None = None,
+    report_builder: Any = None,
+) -> tuple[datetime, datetime, int]:
+    """Prepare a matched catalog/report pair and promote it only after both succeed."""
+    from app.build_report_snapshot import build_report_snapshot
+
+    selected = settings or get_settings()
+    catalog = Path(selected.default_catalog_path)
+    snapshot = Path(selected.report_snapshot_path)
+    catalog.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    temporary_catalog: Path | None = None
+    temporary_snapshot: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=catalog.parent, prefix=f".{catalog.name}.candidate.", suffix=".csv", delete=False
+        ) as temporary:
+            temporary_catalog = Path(temporary.name)
+        with tempfile.NamedTemporaryFile(
+            dir=snapshot.parent,
+            prefix=f".{snapshot.name}.candidate.",
+            suffix=".json",
+            delete=False,
+        ) as temporary:
+            temporary_snapshot = Path(temporary.name)
+
+        candidate_settings = replace(selected, default_catalog_path=str(temporary_catalog))
+        result = prepare_catalog(candidate_settings, client=client, now=now)
+        build_report_snapshot(
+            candidate_settings,
+            catalog_path=temporary_catalog,
+            destination=temporary_snapshot,
+            builder=report_builder,
+        )
+        _promote_catalog_and_snapshot(
+            temporary_catalog, catalog, temporary_snapshot, snapshot
+        )
+        return result
+    finally:
+        if temporary_catalog is not None:
+            temporary_catalog.unlink(missing_ok=True)
+        if temporary_snapshot is not None:
+            temporary_snapshot.unlink(missing_ok=True)
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     try:
-        prepare_catalog()
+        prepare_catalog_and_snapshot()
     except Exception as exc:  # CLI boundary: every preparation failure must be nonzero.
         LOGGER.error("Catalog preparation failed: %s", exc)
         raise SystemExit(1) from exc

@@ -1,0 +1,4 @@
+# Apply the repository defaults, then explicitly upload generated deployment inputs.
+#!include:.gitignore
+!data/catalog.csv
+!data/observatory_report.json

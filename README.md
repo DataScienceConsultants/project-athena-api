@@ -6,8 +6,8 @@ only a service and delivery layer: it neither copies nor recalculates Athena's s
 
 ## Architecture
 
-HTTP routers depend on a focused `AthenaService`, which invokes Athena's public unified Observatory
-intelligence builder once per request. API-owned payloads use Pydantic; the full Observatory report
+HTTP routers depend on a focused `AthenaService`, which reads a validated, precomputed unified
+Observatory report from disk. API-owned payloads use Pydantic; the full Observatory report
 and its time-series section pass through Athena's `to_dict()` serialization unchanged. There is no
 database, authentication, background processing, scheduler, or frontend.
 
@@ -60,17 +60,20 @@ PORT=8000 python -m app
 
 No production catalog is checked into source control. The old generated sample is only
 `tests/fixtures/catalog.csv` and is never a production default or copied into the image. Prepare a
-real catalog as a one-time operation (and whenever refreshing it) with:
+real catalog and its matching report snapshot as a one-time operation (and whenever refreshing
+either) with the canonical preparation command:
 
 ```bash
 python -m app.bootstrap_catalog
 ```
 
 It resolves the configured Puerto Rico bounds, downloads through Athena's public catalog API, lets
-Athena validate and deduplicate the events, and atomically replaces
-`ATHENA_DEFAULT_CATALOG_PATH`. A failed or empty download exits nonzero and preserves an existing
-catalog; it never falls back to fixture data. **Never delete `data/catalog.csv` before running the
-bootstrap**: the existing file is the safe fallback if any download fails. The default rolling
+Athena validate and deduplicate the events, builds Athena's public unified report, and writes strict
+JSON to `ATHENA_REPORT_SNAPSHOT_PATH`. Both candidates must succeed before the matched catalog and
+snapshot are promoted. Promotion is catalog-first with deterministic rollback; metadata validation
+also prevents an interrupted promotion from serving mixed versions. A failed download or report
+build exits nonzero and preserves both existing production files. It never falls back to fixture
+data. **Never delete either prepared file before refreshing it.** The default rolling
 10-year interval is downloaded in consecutive one-year chunks to stay below upstream result limits.
 Each chunk may be empty, and boundary duplicates are resolved by Athena before one chronological CSV
 is atomically promoted. The command logs every requested UTC chunk and its event count.
@@ -85,15 +88,21 @@ ATHENA_BOOTSTRAP_LOOKBACK_DAYS=365 python -m app.bootstrap_catalog
 Set `ATHENA_BOOTSTRAP_START_UTC` and `ATHENA_BOOTSTRAP_END_UTC` to ISO-8601 timestamps with UTC
 offsets for a fixed interval. An explicit start takes precedence over the rolling lookback.
 
-Bootstrap is deliberately **not** part of web startup: Cloud Run may autoscale many instances, and
+The standalone `python -m app.build_report_snapshot` command can rebuild a snapshot from an already
+configured catalog, but `python -m app.bootstrap_catalog` is canonical for production because it
+safely prepares and promotes the pair.
+
+Preparation is deliberately **not** part of web startup: Cloud Run may autoscale many instances, and
 each instance must start from the same prepared snapshot rather than perform a full external USGS
 download. The web command only starts the API. It validates readiness before analytical requests and
-returns a safe 503 for missing or stale data; it never downloads data. The container also installs
+returns a safe 503 for missing, malformed, stale, or mismatched snapshot/catalog data; it never
+downloads data or performs Athena's expensive full report build. The container also installs
 `config/regions.json` alongside Athena as a compatibility measure for Athena 0.4.1, whose wheel does
 not include that package data.
 
 The MVP deployment workflow prepares a real snapshot before `docker build`, validates freshness,
-and includes `data/catalog.csv` in the image. The helper stops immediately if download or validation
+and includes `data/catalog.csv` and `data/observatory_report.json` in the image. The helper stops
+immediately if preparation or validation
 fails, so Docker cannot accidentally build with an absent, stale, empty, or synthetic catalog:
 
 ```bash
@@ -101,8 +110,10 @@ fails, so Docker cannot accidentally build with an absent, stale, empty, or synt
   REGION-docker.pkg.dev/PROJECT/REPOSITORY/project-athena-api:$(git rev-parse --short HEAD)
 ```
 
-The generated `data/catalog.csv` is ignored by Git and remains a build input only. Do not replace it
-with `tests/fixtures/catalog.csv`.
+Both generated files are ignored by Git and remain build inputs only. Do not replace the catalog
+with `tests/fixtures/catalog.csv`. Docker's `COPY data ./data` includes the prepared pair in every
+image. The checked-in `.gcloudignore` explicitly re-includes both ignored deployment inputs for
+Cloud Build source uploads; ensure any global override retains those exceptions.
 
 For Cloud Run, authenticate Docker, run the helper, push that successfully validated image, then
 deploy it while explicitly configuring the production origin and freshness policy:
@@ -137,6 +148,7 @@ All settings have local defaults and may be overridden independently:
 | `ATHENA_VERSION` | pinned commit shown above |
 | `ATHENA_DEFAULT_REGION_KEY` | `puerto_rico` |
 | `ATHENA_DEFAULT_CATALOG_PATH` | `data/catalog.csv` |
+| `ATHENA_REPORT_SNAPSHOT_PATH` | `data/observatory_report.json` |
 | `ATHENA_BOOTSTRAP_LOOKBACK_DAYS` | `3650` (rolling 10 years) |
 | `ATHENA_BOOTSTRAP_CHUNK_DAYS` | `365` |
 | `ATHENA_BOOTSTRAP_START_UTC` | unset; overrides lookback when set |
@@ -171,8 +183,11 @@ An explicitly empty value disables cross-origin access.
 - `GET /` — service discovery.
 
 Analytical endpoints validate that the catalog exists, has at least one event, and its newest event
-is no older than `ATHENA_CATALOG_FRESHNESS_HOURS`. Missing, empty, malformed, or stale catalogs get
-the same safe HTTP 503 response; `/health` remains lightweight liveness and does not read a catalog.
+is no older than `ATHENA_CATALOG_FRESHNESS_HOURS`. They also require snapshot region, event count,
+latest catalog timestamp, structure, and file age to agree with that catalog. Missing, empty,
+malformed, stale, or mismatched inputs get the same safe HTTP 503 response; `/health` and `/version`
+remain lightweight and do not read either file. Repeated analytical requests deserialize the cached
+report and never invoke Athena's scientific builder.
 
 Deployment smoke tests (the first three should return HTTP 200):
 
@@ -184,6 +199,16 @@ curl --fail --show-error "$BASE_URL/summary"
 curl --fail --show-error "$BASE_URL/observatory"
 curl --fail --show-error "$BASE_URL/timeseries"
 curl --fail --show-error "$BASE_URL/timeseries/chart?days=30"
+```
+
+Measure a warm chart request (under one second is ideal; under two is acceptable, and under three
+remains usable):
+
+```bash
+SERVICE_URL=http://127.0.0.1:8000
+curl -s -o /dev/null \
+  -w "HTTP: %{http_code}\nTotal: %{time_total}s\nTTFB: %{time_starttransfer}s\nSize: %{size_download} bytes\n" \
+  "$SERVICE_URL/timeseries/chart?days=30"
 ```
 
 After intentionally pointing `ATHENA_DEFAULT_CATALOG_PATH` at a missing file and restarting, verify
