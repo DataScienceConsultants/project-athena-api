@@ -237,13 +237,31 @@ def test_colombia_uses_existing_report_and_timeseries_pipeline_with_production_i
         assert kwargs["region_key"] == "colombia"
         return ColombiaReport()
 
+    class ColombiaClient:
+        def fetch(self, query):
+            event_time = query.start_time + timedelta(hours=1)
+            return [
+                {
+                    "id": "colombia-research-event",
+                    "properties": {
+                        "time": int(event_time.timestamp() * 1000),
+                        "updated": int(event_time.timestamp() * 1000),
+                        "mag": 3.1,
+                        "magType": "mb",
+                        "place": "Colombia research region",
+                        "type": "earthquake",
+                    },
+                    "geometry": {"coordinates": [-74.0, 5.0, 12.0]},
+                }
+            ]
+
     output = tmp_path / default_output_path("colombia")
     metadata = run_research(
         region_key="colombia",
         start=START,
         end=END,
         output_dir=output,
-        client=Client(),
+        client=ColombiaClient(),
         report_builder=colombia_builder,
         settings=Settings(
             default_catalog_path=str(production_catalog),
