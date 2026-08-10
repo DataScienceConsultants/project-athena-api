@@ -148,6 +148,8 @@ def run_research(
             "bounds": region["bounds"],
             "event_count": event_count,
             "timeseries_period_count": len(time_series["anomaly_results"]),
+            "timeseries_available_period_count": time_series.get("available_period_count"),
+            "timeseries_unavailable_period_count": time_series.get("unavailable_period_count"),
             "athena_mode": "research",
             "report_is_nonpredictive": True,
         }

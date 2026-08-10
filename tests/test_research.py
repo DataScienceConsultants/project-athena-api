@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from app.bootstrap_catalog import configured_region
 from app.config import Settings
 from app.research import build_parser, default_output_path, parse_date, run_research
 
@@ -110,6 +111,30 @@ def test_cli_defaults_and_overrides():
     assert custom.chunk_days == 30
 
 
+def test_colombia_resolves_and_cli_uses_isolated_default_path():
+    region = configured_region("colombia")
+    assert region == {
+        "name": "Colombia and adjacent seismic region",
+        "description": (
+            "Seismic-study bounds covering Colombia, its Pacific subduction margin, and adjacent "
+            "Caribbean and Andean seismic settings around the 10 August 2026 earthquake; they are "
+            "not political boundaries."
+        ),
+        "bounds": {
+            "min_latitude": -5.0,
+            "max_latitude": 14.0,
+            "min_longitude": -82.0,
+            "max_longitude": -66.0,
+        },
+        "default_minimum_magnitude": 2.5,
+    }
+    args = build_parser().parse_args(
+        ["--region", "colombia", "--start", "2021-01-01", "--end", "2026-08-11"]
+    )
+    assert args.region == "colombia"
+    assert default_output_path(args.region) == Path("data/research/colombia")
+
+
 def test_complete_artifacts_metadata_and_production_isolation(tmp_path):
     production_catalog = tmp_path / "production.csv"
     production_report = tmp_path / "production.json"
@@ -144,6 +169,8 @@ def test_complete_artifacts_metadata_and_production_isolation(tmp_path):
     assert all(query.minimum_magnitude == 2.5 for query in client.queries)
     assert metadata["event_count"] == 1
     assert metadata["timeseries_period_count"] == 1
+    assert metadata["timeseries_available_period_count"] == 1
+    assert metadata["timeseries_unavailable_period_count"] == 1
     assert metadata["athena_mode"] == "research"
     assert metadata["report_is_nonpredictive"] is True
     assert json.loads((output / "metadata.json").read_text()) == metadata
@@ -191,6 +218,49 @@ def test_real_builder_uses_repository_region_when_packaged_config_lacks_it(tmp_p
     assert timeseries == report["time_series"]
     assert metadata["region_key"] == "venezuela"
     assert output.relative_to(tmp_path) == Path("data/research/venezuela")
+
+
+def test_colombia_uses_existing_report_and_timeseries_pipeline_with_production_isolation(tmp_path):
+    production_catalog = tmp_path / "data" / "catalog.csv"
+    production_report = tmp_path / "data" / "observatory_report.json"
+    production_catalog.parent.mkdir()
+    production_catalog.write_text("production catalog", encoding="utf-8")
+    production_report.write_text("production report", encoding="utf-8")
+
+    class ColombiaReport(Report):
+        def to_dict(self):
+            payload = super().to_dict()
+            payload["region"] = {"region_key": "colombia"}
+            return payload
+
+    def colombia_builder(**kwargs):
+        assert kwargs["region_key"] == "colombia"
+        return ColombiaReport()
+
+    output = tmp_path / default_output_path("colombia")
+    metadata = run_research(
+        region_key="colombia",
+        start=START,
+        end=END,
+        output_dir=output,
+        client=Client(),
+        report_builder=colombia_builder,
+        settings=Settings(
+            default_catalog_path=str(production_catalog),
+            report_snapshot_path=str(production_report),
+        ),
+    )
+
+    report = json.loads((output / "observatory_report.json").read_text())
+    timeseries = json.loads((output / "timeseries.json").read_text())
+    assert metadata["region_key"] == "colombia"
+    assert metadata["region_name"] == "Colombia and adjacent seismic region"
+    assert metadata["minimum_magnitude"] == 2.5
+    assert report["region"]["region_key"] == "colombia"
+    assert timeseries == report["time_series"]
+    assert output.relative_to(tmp_path) == Path("data/research/colombia")
+    assert production_catalog.read_text(encoding="utf-8") == "production catalog"
+    assert production_report.read_text(encoding="utf-8") == "production report"
 
 
 def test_builder_failure_never_promotes_partial_output(tmp_path):
