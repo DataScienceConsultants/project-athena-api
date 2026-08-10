@@ -170,6 +170,43 @@ ATHENA_ALLOWED_ORIGINS=https://datascienceconsultants.github.io
 Add multiple origins with commas. Do not configure `*`: credentialed CORS requires explicit origins.
 An explicitly empty value disables cross-origin access.
 
+## Athena Research Runner
+
+`python -m app.research` creates historical, descriptive research benchmarks without changing the
+Puerto Rico production API, `data/catalog.csv`, or `data/observatory_report.json`. It uses Athena's
+existing catalog normalization, deduplication, Observatory report builder, and daily anomaly time
+series; it does not introduce or modify scoring. All four artifacts (`catalog.csv`,
+`observatory_report.json`, `timeseries.json`, and `metadata.json`) are built in a temporary sibling
+directory and promoted together only after the complete run succeeds.
+
+Regions are selected from `config/regions.json`. The first additional benchmark is `venezuela`,
+named **Venezuela and northeastern Caribbean seismic region**. Its 7–14° N, 68–59° W research box
+was deliberately selected to include northeastern Venezuela, the adjacent Caribbean seismic
+setting, and surrounding activity relevant to the 21 August 2018 M7.3 event. It is a seismic-study
+window, **not** a representation of Venezuela's political boundaries. Its explicit default USGS
+minimum magnitude remains 1.0; a long interval at that threshold can involve substantial download
+and processing time. Use `--minimum-magnitude` when an intentional benchmark requires another
+threshold—the runner never silently raises it.
+
+Dates are UTC calendar boundaries and form the half-open interval `[start, end)`. Thus this example
+includes all of 2016 through 2020 and writes to `data/research/venezuela/`:
+
+```bash
+python -m app.research \
+  --region venezuela \
+  --start 2016-01-01 \
+  --end 2021-01-01
+```
+
+Use `--output data/research/another-benchmark` for a custom isolated directory,
+`--minimum-magnitude 2.0` for an explicit threshold override, or `--chunk-days 180` to reduce the
+default 365-day USGS request chunks. Run `python -m app.research --help` for all options. Generated
+research data is ignored by Git (apart from `data/research/.gitkeep`) and remains separate from the
+production Puerto Rico catalog and report snapshot.
+
+These artifacts characterize historical seismic activity, observed anomaly behavior, and historical
+comparison only. They retain Athena's existing nonpredictive framing and are not operational alerts.
+
 ## Endpoints
 
 - `GET /health` — lightweight service health; never runs Athena.

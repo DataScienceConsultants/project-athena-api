@@ -47,9 +47,15 @@ def bootstrap_dates(*, now: datetime | None = None) -> tuple[datetime, datetime]
     return start, end
 
 
-def bootstrap_chunks(start: datetime, end: datetime) -> tuple[tuple[datetime, datetime], ...]:
+def bootstrap_chunks(
+    start: datetime, end: datetime, *, chunk_days: int | None = None
+) -> tuple[tuple[datetime, datetime], ...]:
     """Return deterministic, consecutive half-open ranges for the bootstrap interval."""
-    raw_chunk_days = os.getenv("ATHENA_BOOTSTRAP_CHUNK_DAYS", str(DEFAULT_CHUNK_DAYS))
+    raw_chunk_days = (
+        str(chunk_days)
+        if chunk_days is not None
+        else os.getenv("ATHENA_BOOTSTRAP_CHUNK_DAYS", str(DEFAULT_CHUNK_DAYS))
+    )
     try:
         chunk_days = int(raw_chunk_days)
     except ValueError as exc:
@@ -76,11 +82,20 @@ def _region(region_key: str) -> dict[str, Any]:
         raise ValueError(f'Configured region "{region_key}" was not found') from exc
 
 
+def configured_region(region_key: str) -> dict[str, Any]:
+    """Return one configured region without exposing mutable shared state."""
+    return dict(_region(region_key))
+
+
 def prepare_catalog(
     settings: Settings | None = None,
     *,
     client: Any = None,
     now: datetime | None = None,
+    date_range: tuple[datetime, datetime] | None = None,
+    minimum_magnitude: float | None = None,
+    chunk_days: int | None = None,
+    log_prefix: str = "Catalog chunk",
 ) -> tuple[datetime, datetime, int]:
     """Download with Athena, then atomically replace the production catalog."""
     from src.catalog import (
@@ -94,13 +109,17 @@ def prepare_catalog(
     from src.catalog.normalization import deduplicate_events
 
     selected = settings or get_settings()
-    start, end = bootstrap_dates(now=now)
+    start, end = date_range or bootstrap_dates(now=now)
     region = _region(selected.default_region_key)
     bounds = GeographicBounds(**region["bounds"])
-    minimum_magnitude = float(region["default_minimum_magnitude"])
+    minimum_magnitude = (
+        float(region["default_minimum_magnitude"])
+        if minimum_magnitude is None
+        else minimum_magnitude
+    )
     events = []
     summaries = []
-    for chunk_start, chunk_end in bootstrap_chunks(start, end):
+    for chunk_start, chunk_end in bootstrap_chunks(start, end, chunk_days=chunk_days):
         query = CatalogQuery(
             start_time=chunk_start,
             end_time=chunk_end,
@@ -116,12 +135,21 @@ def prepare_catalog(
             ) from exc
         events.extend(chunk_result.events)
         summaries.append(chunk_result.summary)
-        LOGGER.info(
-            "Catalog chunk: %s to %s; %s events",
-            chunk_start.isoformat(),
-            chunk_end.isoformat(),
-            len(chunk_result.events),
-        )
+        if log_prefix == "Catalog chunk":
+            LOGGER.info(
+                "Catalog chunk: %s to %s; %s events",
+                chunk_start.isoformat(),
+                chunk_end.isoformat(),
+                len(chunk_result.events),
+            )
+        else:
+            LOGGER.info(
+                "%s: %s -> %s; %s events",
+                log_prefix,
+                chunk_start.date().isoformat(),
+                chunk_end.date().isoformat(),
+                len(chunk_result.events),
+            )
 
     deduplicated, cross_chunk_duplicates = deduplicate_events(events)
     if not deduplicated:
@@ -262,9 +290,7 @@ def prepare_catalog_and_snapshot(
             destination=temporary_snapshot,
             builder=report_builder,
         )
-        _promote_catalog_and_snapshot(
-            temporary_catalog, catalog, temporary_snapshot, snapshot
-        )
+        _promote_catalog_and_snapshot(temporary_catalog, catalog, temporary_snapshot, snapshot)
         return result
     finally:
         if temporary_catalog is not None:
