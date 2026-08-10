@@ -2,6 +2,7 @@
 
 import json
 import logging
+import threading
 from collections.abc import Callable
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
@@ -25,6 +26,8 @@ class AthenaReportUnavailableError(RuntimeError):
 
 ReportBuilder = Callable[..., AthenaReport]
 
+_REGION_RESOLUTION_LOCK = threading.Lock()
+
 
 class CachedAthenaReport:
     """Minimal immutable-style adapter retaining the router-facing report contract."""
@@ -40,6 +43,46 @@ def _public_report_builder() -> ReportBuilder:
     """Resolve Athena lazily so health/version can run without catalog initialization."""
     module = import_module("src.observatory")
     return module.build_observatory_intelligence_report
+
+
+def build_report_for_region(
+    builder: ReportBuilder,
+    *,
+    region_key: str,
+    region: dict[str, Any],
+    catalog_path: str,
+) -> AthenaReport:
+    """Call Athena's unified builder with an API-compatible external region definition.
+
+    The pinned Athena builder accepts a region key but its unified entry point does not
+    expose the configuration path supported by its underlying Observatory builder.  Keep
+    all scientific processing in that unified builder and adapt only its region lookup.
+    The lock makes the short-lived dependency substitution safe within this process.
+    """
+    builder_globals = getattr(builder, "__globals__", {})
+    packaged_resolver = builder_globals.get("resolve_region")
+    if packaged_resolver is None:
+        return builder(region_key=region_key, catalog_path=catalog_path)
+
+    region_name = str(region.get("name", region_key))
+
+    def repository_resolver(*, catalog_path: str | Path, region_key: str | None = None):
+        del catalog_path
+        selected_key = region_key or region_key_argument
+        if selected_key != region_key_argument:
+            raise ValueError(
+                f'Region "{selected_key}" does not match selected region '
+                f'"{region_key_argument}"'
+            )
+        return region_key_argument, region_name
+
+    region_key_argument = region_key
+    with _REGION_RESOLUTION_LOCK:
+        builder_globals["resolve_region"] = repository_resolver
+        try:
+            return builder(region_key=region_key, catalog_path=catalog_path)
+        finally:
+            builder_globals["resolve_region"] = packaged_resolver
 
 
 class AthenaService:

@@ -131,6 +131,7 @@ def run_research(
             catalog_path=candidate / "catalog.csv",
             builder=report_builder,
             generated_at=generated_at,
+            region=region,
         )
         report = snapshot["report"]
         time_series = report["time_series"]

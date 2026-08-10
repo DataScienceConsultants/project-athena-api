@@ -13,7 +13,7 @@ from typing import Any
 import pandas as pd
 
 from app.config import Settings, get_settings
-from app.services.athena import ReportBuilder, _public_report_builder
+from app.services.athena import ReportBuilder, _public_report_builder, build_report_for_region
 
 LOGGER = logging.getLogger(__name__)
 
@@ -40,14 +40,24 @@ def build_snapshot_payload(
     catalog_path: str | Path | None = None,
     builder: ReportBuilder | None = None,
     generated_at: datetime | None = None,
+    region: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the report through Athena and wrap it in catalog identity metadata."""
     source = Path(catalog_path or settings.default_catalog_path)
     catalog_as_of, event_count = catalog_identity(source)
-    report = (builder or _public_report_builder())(
-        region_key=settings.default_region_key,
-        catalog_path=str(source),
-    )
+    selected_builder = builder or _public_report_builder()
+    if region is None:
+        report = selected_builder(
+            region_key=settings.default_region_key,
+            catalog_path=str(source),
+        )
+    else:
+        report = build_report_for_region(
+            selected_builder,
+            region_key=settings.default_region_key,
+            region=region,
+            catalog_path=str(source),
+        )
     return {
         "metadata": {
             "generated_at_utc": _utc_string(generated_at or datetime.now(UTC)),

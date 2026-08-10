@@ -154,6 +154,45 @@ def test_complete_artifacts_metadata_and_production_isolation(tmp_path):
     )
 
 
+def test_real_builder_uses_repository_region_when_packaged_config_lacks_it(tmp_path):
+    """Regression: catalog, report, and series share the research runner's region."""
+    from src.observatory.builder import resolve_region
+
+    packaged_config = tmp_path / "packaged" / "config" / "regions.json"
+    packaged_config.parent.mkdir(parents=True)
+    packaged_config.write_text(
+        json.dumps(
+            {
+                "default_region": "puerto_rico",
+                "regions": {"puerto_rico": {"name": "Puerto Rico"}},
+            }
+        )
+    )
+    with pytest.raises(ValueError, match='Region "venezuela" was not found'):
+        resolve_region(
+            catalog_path="catalog.csv",
+            region_key="venezuela",
+            configuration_path=packaged_config,
+        )
+
+    output = tmp_path / "data" / "research" / "venezuela"
+    metadata = run_research(
+        region_key="venezuela",
+        start=START,
+        end=END,
+        output_dir=output,
+        client=Client(),
+    )
+
+    report = json.loads((output / "observatory_report.json").read_text())
+    timeseries = json.loads((output / "timeseries.json").read_text())
+    assert report["observatory"]["catalog"]["region_key"] == "venezuela"
+    assert report["observatory"]["catalog"]["region_name"] == metadata["region_name"]
+    assert timeseries == report["time_series"]
+    assert metadata["region_key"] == "venezuela"
+    assert output.relative_to(tmp_path) == Path("data/research/venezuela")
+
+
 def test_builder_failure_never_promotes_partial_output(tmp_path):
     output = tmp_path / "research"
     output.mkdir()
