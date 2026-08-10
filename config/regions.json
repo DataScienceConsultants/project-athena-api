@@ -21,6 +21,17 @@
         "max_longitude": -59.0
       },
       "default_minimum_magnitude": 1.0
+    },
+    "colombia": {
+      "name": "Colombia and adjacent seismic region",
+      "description": "Seismic-study bounds covering Colombia, its Pacific subduction margin, and adjacent Caribbean and Andean seismic settings around the 10 August 2026 earthquake; they are not political boundaries.",
+      "bounds": {
+        "min_latitude": -5.0,
+        "max_latitude": 14.0,
+        "min_longitude": -82.0,
+        "max_longitude": -66.0
+      },
+      "default_minimum_magnitude": 2.5
     }
   }
 }

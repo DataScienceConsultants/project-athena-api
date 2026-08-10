@@ -188,6 +188,24 @@ minimum magnitude remains 1.0; a long interval at that threshold can involve sub
 and processing time. Use `--minimum-magnitude` when an intentional benchmark requires another
 threshold—the runner never silently raises it.
 
+The `colombia` benchmark is named **Colombia and adjacent seismic region**. Its bounds are
+5° S–14° N and 82–66° W, with a default USGS minimum magnitude of 2.5. This deliberately bounded
+seismic-study window covers Colombia, the offshore Pacific subduction margin, and adjacent
+Caribbean and Andean seismic settings relevant to the 10 August 2026 earthquake; it is **not** an
+exact political boundary or a general South America bounding box. The benchmark uses the frozen,
+existing Athena catalog, Observatory, anomaly-scoring, and time-series methodology for
+out-of-sample retrospective analysis of observed seismic behavior. It does not claim prediction or
+forecasting capability.
+
+Run the Colombia benchmark (writing only to `data/research/colombia/`) with:
+
+```bash
+python -m app.research \
+  --region colombia \
+  --start 2021-01-01 \
+  --end 2026-08-11
+```
+
 Dates are UTC calendar boundaries and form the half-open interval `[start, end)`. Thus this example
 includes all of 2016 through 2020 and writes to `data/research/venezuela/`:
 
@@ -206,6 +224,8 @@ production Puerto Rico catalog and report snapshot.
 
 These artifacts characterize historical seismic activity, observed anomaly behavior, and historical
 comparison only. They retain Athena's existing nonpredictive framing and are not operational alerts.
+Metadata records the requested range, configured bounds and minimum magnitude, total event count,
+and the available and unavailable time-series period counts supplied by the existing report.
 
 ## Endpoints
 
