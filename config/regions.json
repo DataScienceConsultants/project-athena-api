@@ -10,6 +10,17 @@
         "max_longitude": -64.0
       },
       "default_minimum_magnitude": 1.0
+    },
+    "venezuela": {
+      "name": "Venezuela and northeastern Caribbean seismic region",
+      "description": "Research bounds covering northeastern Venezuela and the adjacent Caribbean seismic setting around the 21 August 2018 M7.3 event; they are not political boundaries.",
+      "bounds": {
+        "min_latitude": 7.0,
+        "max_latitude": 14.0,
+        "min_longitude": -68.0,
+        "max_longitude": -59.0
+      },
+      "default_minimum_magnitude": 1.0
     }
   }
 }
