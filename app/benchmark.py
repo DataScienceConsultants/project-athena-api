@@ -1,0 +1,382 @@
+"""Research-only historical measurements of frozen Athena time-series artifacts."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import math
+import statistics
+from collections.abc import Iterable, Sequence
+from datetime import date, timedelta
+from pathlib import Path
+from typing import Any
+
+CONFIG_PATH = Path("config/benchmarks.json")
+RESEARCH_ROOT = Path("data/research")
+DEFAULT_OUTPUT = Path("data/benchmarks")
+THRESHOLDS = (70, 75, 80, 90, 95)
+HORIZONS = (1, 3, 7, 10, 14, 30)
+ASSOCIATION_MAGNITUDES = (5, 6, 7)
+
+
+def _day(point: dict[str, Any]) -> date:
+    return date.fromisoformat(point["current_start"][:10])
+
+
+def _metric(point: dict[str, Any], name: str) -> Any:
+    value = point.get("metric_scores", {}).get(name)
+    return value.get("current_value") if isinstance(value, dict) else None
+
+
+def _numbers(values: Iterable[Any]) -> list[float]:
+    return [
+        float(value) for value in values if isinstance(value, int | float) and not math.isnan(value)
+    ]
+
+
+def _mean(values: Iterable[Any]) -> float | None:
+    valid = _numbers(values)
+    return statistics.fmean(valid) if valid else None
+
+
+def _maximum(values: Iterable[Any]) -> float | None:
+    valid = _numbers(values)
+    return max(valid) if valid else None
+
+
+def window_points(
+    points: Sequence[dict[str, Any]], event_day: date, days: int
+) -> list[dict[str, Any]]:
+    """Select [event day - days, event day), explicitly excluding the event day."""
+    start = event_day - timedelta(days=days)
+    return [point for point in points if start <= _day(point) < event_day]
+
+
+def window_metrics(points: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    scores = _numbers(point.get("score") for point in points)
+    result: dict[str, Any] = {
+        "scored_day_count": len(scores),
+        "mean_anomaly_score": statistics.fmean(scores) if scores else None,
+        "median_anomaly_score": statistics.median(scores) if scores else None,
+        "maximum_anomaly_score": max(scores) if scores else None,
+        "minimum_anomaly_score": min(scores) if scores else None,
+        "standard_deviation_anomaly_score": statistics.pstdev(scores) if scores else None,
+    }
+    for threshold in THRESHOLDS:
+        result[f"days_ge{threshold}"] = sum(score >= threshold for score in scores)
+    result["days_eq100"] = sum(score == 100 for score in scores)
+    for name in ("event_count", "maximum_magnitude", "total_energy_joules", "mean_depth_km"):
+        values = [_metric(point, name) for point in points]
+        result[f"mean_{name}"] = _mean(values)
+        if name != "mean_depth_km":
+            result[f"maximum_{name}"] = _maximum(values)
+    result["maximum_pre_event_magnitude"] = result.pop("maximum_maximum_magnitude")
+    return result
+
+
+def longest_run(points: Sequence[dict[str, Any]], threshold: int) -> int:
+    longest = current = 0
+    previous: date | None = None
+    for point in sorted(points, key=_day):
+        score = point.get("score")
+        day = _day(point)
+        if isinstance(score, int | float) and score >= threshold:
+            current = current + 1 if previous == day - timedelta(days=1) else 1
+            longest = max(longest, current)
+            previous = day
+        else:
+            current = 0
+            previous = None
+    return longest
+
+
+def cluster_count(points: Sequence[dict[str, Any]], threshold: int) -> int:
+    count = 0
+    active = False
+    previous: date | None = None
+    for point in sorted(points, key=_day):
+        day = _day(point)
+        qualifies = isinstance(point.get("score"), int | float) and point["score"] >= threshold
+        if qualifies and (not active or previous != day - timedelta(days=1)):
+            count += 1
+        active = qualifies
+        previous = day
+    return count
+
+
+def persistence_metrics(points30: Sequence[dict[str, Any]], event_day: date) -> dict[str, Any]:
+    result = {f"longest_consecutive_run_ge{t}": longest_run(points30, t) for t in (70, 75, 80)}
+    result["distinct_ge70_clusters"] = cluster_count(points30, 70)
+    for threshold in (70, 80):
+        for days in (7, 14, 30):
+            recent = window_points(points30, event_day, days)
+            result[f"count_ge{threshold}_most_recent_{days}d"] = sum(
+                isinstance(point.get("score"), int | float) and point["score"] >= threshold
+                for point in recent
+            )
+    return result
+
+
+def days_since_last(
+    points30: Sequence[dict[str, Any]], event_day: date, threshold: int
+) -> int | None:
+    qualifying = [
+        _day(point)
+        for point in points30
+        if isinstance(point.get("score"), int | float) and point["score"] >= threshold
+    ]
+    return (event_day - max(qualifying)).days if qualifying else None
+
+
+def event_day_metrics(points: Sequence[dict[str, Any]], event_day: date) -> dict[str, Any]:
+    point = next((item for item in points if _day(item) == event_day), None)
+    return {
+        "event_day_anomaly_score": point.get("score") if point else None,
+        "event_day_anomaly_level": point.get("level") if point else None,
+        **{
+            f"event_day_{name}": _metric(point, name) if point else None
+            for name in ("event_count", "maximum_magnitude", "total_energy_joules", "mean_depth_km")
+        },
+    }
+
+
+def catalog_adequacy(series: dict[str, Any], points: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    candidate = int(series.get("candidate_period_count") or 0)
+    available = int(series.get("available_period_count") or 0)
+    unavailable = int(series.get("unavailable_period_count") or max(candidate - available, 0))
+    percentage = available / candidate * 100 if candidate else None
+    event_days = sum((_metric(point, "event_count") or 0) > 0 for point in points)
+    # Deterministic descriptive rule: >=90% usable, >=50% limited, otherwise insufficient.
+    status = (
+        "insufficient"
+        if percentage is None or percentage < 50
+        else ("usable" if percentage >= 90 else "limited")
+    )
+    return {
+        "source_event_count": series.get("source_event_count"),
+        "candidate_period_count": candidate,
+        "available_period_count": available,
+        "unavailable_period_count": unavailable,
+        "availability_percentage": percentage,
+        "days_with_one_or_more_catalog_events": event_days,
+        "percentage_days_with_events": event_days / candidate * 100 if candidate else None,
+        "status": status,
+    }
+
+
+def base_rates(points: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    scores = _numbers(point.get("score") for point in points)
+    result: dict[str, Any] = {"total_scored_days": len(scores)}
+    for threshold in THRESHOLDS:
+        count = sum(score >= threshold for score in scores)
+        result[f"days_ge{threshold}"] = count
+        result[f"percentage_ge{threshold}"] = count / len(scores) * 100 if scores else None
+    count100 = sum(score == 100 for score in scores)
+    result.update(
+        days_eq100=count100, percentage_eq100=count100 / len(scores) * 100 if scores else None
+    )
+    return result
+
+
+def _associations_for_magnitude(
+    points: Sequence[dict[str, Any]], magnitude: float
+) -> dict[str, Any]:
+    """Measure later-event associations for one explicit magnitude cutoff."""
+    by_day = {_day(point): point for point in points}
+    result: dict[str, Any] = {}
+    for threshold in THRESHOLDS:
+        qualifying = [
+            point
+            for point in points
+            if isinstance(point.get("score"), int | float) and point["score"] >= threshold
+        ]
+        threshold_result: dict[str, Any] = {"qualifying_anomaly_day_count": len(qualifying)}
+        for horizon in HORIZONS:
+            count = sum(
+                any(
+                    (
+                        _metric(
+                            by_day.get(_day(point) + timedelta(days=offset), {}),
+                            "maximum_magnitude",
+                        )
+                        or -math.inf
+                    )
+                    >= magnitude
+                    for offset in range(1, horizon + 1)
+                )
+                for point in qualifying
+            )
+            threshold_result[f"followed_by_event_within_{horizon}d_count"] = count
+            threshold_result[f"followed_by_event_within_{horizon}d_fraction"] = (
+                count / len(qualifying) if qualifying else None
+            )
+        result[f"threshold_{threshold}"] = threshold_result
+    return result
+
+
+def future_event_associations(points: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """Return comparable regional associations for the fixed M5, M6, and M7 cutoffs."""
+    return {
+        f"magnitude_ge{magnitude}": _associations_for_magnitude(points, magnitude)
+        for magnitude in ASSOCIATION_MAGNITUDES
+    }
+
+
+def classify_regime(points14: Sequence[dict[str, Any]]) -> str:
+    count = sum(
+        isinstance(point.get("score"), int | float) and point["score"] >= 70 for point in points14
+    )
+    if count == 0:
+        return "quiet"
+    if count == 1:
+        return "isolated_anomaly"
+    if longest_run(points14, 70) >= 3:
+        return "persistent_anomalous_regime"
+    return "intermittent_anomalies"
+
+
+def analyze(benchmark: dict[str, Any], series: dict[str, Any]) -> dict[str, Any]:
+    points = series.get("anomaly_results", [])
+    event_day = date.fromisoformat(benchmark["event_date_utc"])
+    windows = {days: window_points(points, event_day, days) for days in (30, 14, 7)}
+    persistence = persistence_metrics(windows[30], event_day)
+    persistence.update(
+        {
+            f"days_since_last_score_{t}": days_since_last(windows[30], event_day, t)
+            for t in (70, 75, 80, 90)
+        }
+    )
+    return {
+        "benchmark": benchmark,
+        "catalog_adequacy": catalog_adequacy(series, points),
+        "event_day_metrics": event_day_metrics(points, event_day),
+        "pre_event_windows": {
+            f"{days}_day": window_metrics(window) for days, window in windows.items()
+        },
+        "persistence_metrics": persistence,
+        "regional_base_rates": base_rates(points),
+        "future_event_associations": future_event_associations(points),
+        "benchmark_magnitude_associations": {
+            "required_magnitude": float(benchmark["event_magnitude"]),
+            "associations": _associations_for_magnitude(
+                points, float(benchmark["event_magnitude"])
+            ),
+        },
+        "regime_characterization": {
+            "classification": classify_regime(windows[14]),
+            "definition": (
+                "quiet: 0 >=70 days in 14d; isolated: 1; intermittent: 2+ with "
+                "run <3; persistent: run >=3"
+            ),
+        },
+        "research_only": True,
+    }
+
+
+def _write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+
+
+def summary_row(result: dict[str, Any]) -> dict[str, Any]:
+    bench, windows, persistence = (
+        result["benchmark"],
+        result["pre_event_windows"],
+        result["persistence_metrics"],
+    )
+    row = {
+        "benchmark_id": bench["benchmark_id"],
+        "region_key": bench["region_key"],
+        "event_date": bench["event_date_utc"],
+        "event_magnitude": bench["event_magnitude"],
+    }
+    for days in (30, 14, 7):
+        metrics = windows[f"{days}_day"]
+        row.update(
+            {
+                f"pre{days}_mean_score": metrics["mean_anomaly_score"],
+                f"pre{days}_days_ge70": metrics["days_ge70"],
+                f"pre{days}_days_ge80": metrics["days_ge80"],
+            }
+        )
+    row.update(
+        pre30_max_score=windows["30_day"]["maximum_anomaly_score"],
+        longest_ge70_run=persistence["longest_consecutive_run_ge70"],
+        event_day_score=result["event_day_metrics"]["event_day_anomaly_score"],
+        regime_classification=result["regime_characterization"]["classification"],
+        catalog_adequacy=result["catalog_adequacy"]["status"],
+    )
+    row.update(
+        {
+            f"days_since_last_{t}": persistence[f"days_since_last_score_{t}"]
+            for t in (70, 75, 80, 90)
+        }
+    )
+    return row
+
+
+def run_benchmarks(
+    ids: Sequence[str] | None,
+    output: Path = DEFAULT_OUTPUT,
+    config_path: Path | None = None,
+    research_root: Path | None = None,
+) -> list[dict[str, Any]]:
+    config_path = config_path or CONFIG_PATH
+    research_root = research_root or RESEARCH_ROOT
+    configured = json.loads(config_path.read_text(encoding="utf-8"))["benchmarks"]
+    selected = (
+        configured if ids is None else [item for item in configured if item["benchmark_id"] in ids]
+    )
+    if ids is not None and len(selected) != len(ids):
+        missing = sorted(set(ids) - {item["benchmark_id"] for item in selected})
+        raise ValueError(f"Unknown benchmark(s): {', '.join(missing)}")
+    results = []
+    for benchmark in selected:
+        artifact = research_root / benchmark["region_key"] / "timeseries.json"
+        if not artifact.exists():
+            command = (
+                f"python -m app.research --region {benchmark['region_key']} "
+                f"--start {benchmark['analysis_start']} --end {benchmark['analysis_end']}"
+            )
+            raise FileNotFoundError(f"Missing research artifact {artifact}. Run: {command}")
+        result = analyze(benchmark, json.loads(artifact.read_text(encoding="utf-8")))
+        _write_json(output / benchmark["benchmark_id"] / "result.json", result)
+        results.append(result)
+    return results
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Measure historical associations in frozen Athena research artifacts (nonpredictive)."
+        )
+    )
+    choice = parser.add_mutually_exclusive_group(required=True)
+    choice.add_argument("--benchmark", help="Configured benchmark ID")
+    choice.add_argument("--all", action="store_true", help="Run every configured benchmark")
+    parser.add_argument(
+        "--output", type=Path, default=DEFAULT_OUTPUT, help="Output root (default: data/benchmarks)"
+    )
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        results = run_benchmarks(None if args.all else [args.benchmark], args.output)
+        if args.all:
+            rows = [summary_row(result) for result in results]
+            _write_json(args.output / "summary.json", rows)
+            args.output.mkdir(parents=True, exist_ok=True)
+            with (args.output / "summary.csv").open("w", newline="", encoding="utf-8") as stream:
+                writer = csv.DictWriter(stream, fieldnames=list(rows[0]) if rows else [])
+                writer.writeheader()
+                writer.writerows(rows)
+    except Exception as exc:
+        parser.exit(1, f"Benchmark run failed: {exc}\n")
+
+
+if __name__ == "__main__":
+    main()
