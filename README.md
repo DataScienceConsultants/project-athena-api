@@ -227,6 +227,41 @@ comparison only. They retain Athena's existing nonpredictive framing and are not
 Metadata records the requested range, configured bounds and minimum magnitude, total event count,
 and the available and unavailable time-series period counts supplied by the existing report.
 
+## Athena Historical Benchmark Runner
+
+The research-only benchmark runner measures how the **existing frozen Athena model** behaved around
+curated historical earthquakes. It reads the unmodified artifacts produced by `app.research`; it
+does not alter scoring, weights, thresholds, baselines, Observatory or daily time-series
+calculations, region definitions, or production API paths. Benchmark entries in
+`config/benchmarks.json` contain only observed event metadata and artifact coverage dates—never an
+expected score or a success/failure label.
+
+First generate the configured region artifact if it is absent (the benchmark command prints the
+exact required research command), then run one event or the full set:
+
+```bash
+python -m app.benchmark --benchmark colombia_2026_08_10
+python -m app.benchmark --all
+python -m app.benchmark --all --output data/benchmarks
+```
+
+Each event produces `data/benchmarks/<benchmark_id>/result.json`, containing separate event-day and
+7-, 14-, and 30-day pre-event measurements, persistence and recency measurements, regional base
+rates, retrospective future-event associations, and catalog adequacy. `--all` additionally writes
+`summary.json` and one-row-per-event `summary.csv`. Null source values remain unavailable rather
+than becoming zero, and the earthquake day is excluded from every pre-event window.
+
+Catalog adequacy uses the artifact's available/candidate period percentage: **usable** is at least
+90%, **limited** is at least 50% but below 90%, and **insufficient** is below 50% (including no
+candidate periods). Regime labels are deterministic reporting helpers based on the prior 14 days:
+**quiet** has no score ≥70 day; **isolated_anomaly** has one; **intermittent_anomalies** has two or
+more but no three-day run; and **persistent_anomalous_regime** has a run of at least three.
+
+Future-event fields report only retrospective associations between anomaly days and later daily
+maximum magnitudes. They are not probabilities, forecasts, risks, or operational alerts. **Athena
+benchmark analysis describes historical associations and does not establish earthquake prediction
+capability.**
+
 ## Endpoints
 
 - `GET /health` — lightweight service health; never runs Athena.

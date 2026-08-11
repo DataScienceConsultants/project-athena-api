@@ -13,3 +13,4 @@ data/catalog.csv
 data/observatory_report.json
 data/research/*
 !data/research/.gitkeep
+data/benchmarks/

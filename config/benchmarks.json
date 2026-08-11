@@ -1,0 +1,44 @@
+{
+  "benchmarks": [
+    {
+      "benchmark_id": "puerto_rico_2020_01_07",
+      "name": "Puerto Rico January 7, 2020 M6.4 earthquake",
+      "region_key": "puerto_rico",
+      "event_date_utc": "2020-01-07",
+      "event_magnitude": 6.4,
+      "analysis_start": "2019-01-01",
+      "analysis_end": "2020-01-08",
+      "notes": "Observed earthquake metadata for the Puerto Rico seismic region."
+    },
+    {
+      "benchmark_id": "colombia_2021_11_28",
+      "name": "Colombia November 28, 2021 M7.5 earthquake",
+      "region_key": "colombia",
+      "event_date_utc": "2021-11-28",
+      "event_magnitude": 7.5,
+      "analysis_start": "2021-01-01",
+      "analysis_end": "2026-08-11",
+      "notes": "Observed earthquake metadata for the configured Colombia seismic-study region."
+    },
+    {
+      "benchmark_id": "colombia_2026_06_24",
+      "name": "Colombia June 24, 2026 M7.5 earthquake",
+      "region_key": "colombia",
+      "event_date_utc": "2026-06-24",
+      "event_magnitude": 7.5,
+      "analysis_start": "2021-01-01",
+      "analysis_end": "2026-08-11",
+      "notes": "Observed earthquake metadata for the configured Colombia seismic-study region."
+    },
+    {
+      "benchmark_id": "colombia_2026_08_10",
+      "name": "Colombia August 10, 2026 M7.4 earthquake",
+      "region_key": "colombia",
+      "event_date_utc": "2026-08-10",
+      "event_magnitude": 7.4,
+      "analysis_start": "2021-01-01",
+      "analysis_end": "2026-08-11",
+      "notes": "Observed earthquake metadata for the configured Colombia seismic-study region."
+    }
+  ]
+}
