@@ -258,7 +258,10 @@ candidate periods). Regime labels are deterministic reporting helpers based on t
 more but no three-day run; and **persistent_anomalous_regime** has a run of at least three.
 
 Future-event fields report only retrospective associations between anomaly days and later daily
-maximum magnitudes. They are not probabilities, forecasts, risks, or operational alerts. **Athena
+maximum magnitudes. Regional results always use the fixed, directly comparable M5+, M6+, and M7+
+cutoffs. A separately named benchmark-magnitude section retains the event-specific cutoff and does
+not replace those fixed regional statistics. Every horizon begins on the day after an anomaly day.
+These measurements are not probabilities, forecasts, risks, or operational alerts. **Athena
 benchmark analysis describes historical associations and does not establish earthquake prediction
 capability.**
 

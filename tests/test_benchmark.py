@@ -11,6 +11,7 @@ from app.benchmark import (
     classify_regime,
     cluster_count,
     days_since_last,
+    future_event_associations,
     longest_run,
     main,
     window_metrics,
@@ -108,6 +109,54 @@ def test_event_day_base_rate_and_catalog_adequacy():
     assert catalog_adequacy(series, points)["status"] == "limited"
     series["available_period_count"] = 0
     assert catalog_adequacy(series, points)["status"] == "insufficient"
+
+
+def test_fixed_future_associations_are_independent_and_exclude_same_day():
+    anomaly_day = EVENT - timedelta(days=10)
+    points = [
+        # This same-day M7 must not count because association horizons start at +1 day.
+        point(anomaly_day, 80, magnitude=7.2),
+        point(anomaly_day + timedelta(days=1), 10, magnitude=5.5),
+        point(anomaly_day + timedelta(days=3), 10, magnitude=6.5),
+        point(anomaly_day + timedelta(days=7), 10, magnitude=7.1),
+        # A second qualifying day has no future event, making the denominator visibly two.
+        point(EVENT, 80, magnitude=4.0),
+    ]
+
+    associations = future_event_associations(points)
+    m5 = associations["magnitude_ge5"]["threshold_80"]
+    m6 = associations["magnitude_ge6"]["threshold_80"]
+    m7 = associations["magnitude_ge7"]["threshold_80"]
+    assert m5["followed_by_event_within_1d_count"] == 1
+    assert m6["followed_by_event_within_1d_count"] == 0
+    assert m6["followed_by_event_within_3d_count"] == 1
+    assert m7["followed_by_event_within_3d_count"] == 0
+    assert m7["followed_by_event_within_7d_count"] == 1
+    assert m7["followed_by_event_within_7d_fraction"] == 0.5
+    assert m7["qualifying_anomaly_day_count"] == 2
+
+
+def test_fixed_associations_do_not_depend_on_benchmark_magnitude():
+    anomaly_day = EVENT - timedelta(days=2)
+    points = [point(anomaly_day, 75), point(anomaly_day + timedelta(days=1), 10, magnitude=6.8)]
+    series = {
+        "candidate_period_count": 2,
+        "available_period_count": 2,
+        "anomaly_results": points,
+    }
+
+    low = analyze(
+        {"benchmark_id": "low", "event_date_utc": str(EVENT), "event_magnitude": 6.0},
+        series,
+    )
+    high = analyze(
+        {"benchmark_id": "high", "event_date_utc": str(EVENT), "event_magnitude": 7.0},
+        series,
+    )
+    assert low["future_event_associations"] == high["future_event_associations"]
+    assert low["benchmark_magnitude_associations"] != high["benchmark_magnitude_associations"]
+    assert low["benchmark_magnitude_associations"]["required_magnitude"] == 6.0
+    assert high["benchmark_magnitude_associations"]["required_magnitude"] == 7.0
 
 
 def test_all_writes_json_csv_and_does_not_touch_production(tmp_path, monkeypatch):

@@ -17,6 +17,7 @@ RESEARCH_ROOT = Path("data/research")
 DEFAULT_OUTPUT = Path("data/benchmarks")
 THRESHOLDS = (70, 75, 80, 90, 95)
 HORIZONS = (1, 3, 7, 10, 14, 30)
+ASSOCIATION_MAGNITUDES = (5, 6, 7)
 
 
 def _day(point: dict[str, Any]) -> date:
@@ -178,7 +179,10 @@ def base_rates(points: Sequence[dict[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def future_event_associations(points: Sequence[dict[str, Any]], magnitude: float) -> dict[str, Any]:
+def _associations_for_magnitude(
+    points: Sequence[dict[str, Any]], magnitude: float
+) -> dict[str, Any]:
+    """Measure later-event associations for one explicit magnitude cutoff."""
     by_day = {_day(point): point for point in points}
     result: dict[str, Any] = {}
     for threshold in THRESHOLDS:
@@ -209,6 +213,14 @@ def future_event_associations(points: Sequence[dict[str, Any]], magnitude: float
             )
         result[f"threshold_{threshold}"] = threshold_result
     return result
+
+
+def future_event_associations(points: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """Return comparable regional associations for the fixed M5, M6, and M7 cutoffs."""
+    return {
+        f"magnitude_ge{magnitude}": _associations_for_magnitude(points, magnitude)
+        for magnitude in ASSOCIATION_MAGNITUDES
+    }
 
 
 def classify_regime(points14: Sequence[dict[str, Any]]) -> str:
@@ -244,9 +256,13 @@ def analyze(benchmark: dict[str, Any], series: dict[str, Any]) -> dict[str, Any]
         },
         "persistence_metrics": persistence,
         "regional_base_rates": base_rates(points),
-        "future_event_associations": future_event_associations(
-            points, float(benchmark["event_magnitude"])
-        ),
+        "future_event_associations": future_event_associations(points),
+        "benchmark_magnitude_associations": {
+            "required_magnitude": float(benchmark["event_magnitude"]),
+            "associations": _associations_for_magnitude(
+                points, float(benchmark["event_magnitude"])
+            ),
+        },
         "regime_characterization": {
             "classification": classify_regime(windows[14]),
             "definition": (
