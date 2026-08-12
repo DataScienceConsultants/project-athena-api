@@ -6,14 +6,20 @@ import pytest
 
 from app.benchmark import (
     analyze,
+    anchor_features,
     base_rates,
     catalog_adequacy,
     classify_regime,
     cluster_count,
+    compare_case_controls,
+    controls_payload,
     days_since_last,
+    eligible_control_dates,
     future_event_associations,
     longest_run,
     main,
+    numeric_comparison,
+    sample_control_dates,
     window_metrics,
     window_points,
 )
@@ -159,6 +165,59 @@ def test_fixed_associations_do_not_depend_on_benchmark_magnitude():
     assert high["benchmark_magnitude_associations"]["required_magnitude"] == 7.0
 
 
+def test_controls_have_complete_history_exclude_anchor_and_m7_zone():
+    start = EVENT - timedelta(days=100)
+    points = [point(start + timedelta(days=n), n, magnitude=2) for n in range(101)]
+    major = start + timedelta(days=70)
+    points[70] = point(major, 70, magnitude=7.0)
+    eligible = eligible_control_dates(points)
+    assert start + timedelta(days=29) not in eligible
+    assert start + timedelta(days=30) in eligible
+    assert all(abs((candidate - major).days) > 30 for candidate in eligible)
+
+    features = anchor_features(points, start + timedelta(days=30))
+    assert features["pre30"]["maximum_anomaly_score"] == 29
+
+
+def test_sampling_is_deterministic_score_independent_and_can_be_nonoverlapping():
+    start = EVENT - timedelta(days=160)
+    points = [point(start + timedelta(days=n), n % 101) for n in range(161)]
+    first = sample_control_dates(points, 20, 7)
+    assert first == sample_control_dates(points, 20, 7)
+    rescored = [{**item, "score": 100 - item["score"]} for item in points]
+    assert first == sample_control_dates(rescored, 20, 7)
+    assert first != sample_control_dates(points, 20, 8)
+    spaced = sample_control_dates(points, 100, 7, non_overlapping=True)
+    assert all(
+        abs((left - right).days) >= 30
+        for index, left in enumerate(spaced)
+        for right in spaced[index + 1 :]
+    )
+
+
+def test_control_payload_shortfall_percentiles_nulls_and_regimes():
+    start = EVENT - timedelta(days=40)
+    points = [point(start + timedelta(days=n), 10) for n in range(41)]
+    payload = controls_payload(
+        {"benchmark_id": "x", "region_key": "test"}, points, 100, 42, adequacy="limited"
+    )
+    assert payload["selected_control_count"] == 11
+    assert payload["selection_status"] == "insufficient_eligible_controls"
+    assert payload["catalog_adequacy"] == "limited"
+
+    comparison = numeric_comparison(3, [1, 2, 3, 4, None])
+    assert comparison["case_percentile_rank"] == 75.0
+    assert comparison["fraction_of_controls_ge_case"] == 0.5
+    assert comparison["valid_control_count"] == 4
+    assert comparison["null_control_count"] == 1
+
+    case = anchor_features(points, EVENT)
+    controls = [anchor_features(points, EVENT - timedelta(days=n)) for n in (1, 2)]
+    regimes = compare_case_controls(case, controls)["regimes"]
+    assert regimes["case_regime"] == "quiet"
+    assert regimes["control_distribution"]["quiet"] == 1.0
+
+
 def test_all_writes_json_csv_and_does_not_touch_production(tmp_path, monkeypatch):
     benchmark = {
         "benchmark_id": "synthetic",
@@ -189,7 +248,15 @@ def test_all_writes_json_csv_and_does_not_touch_production(tmp_path, monkeypatch
     monkeypatch.setattr("app.benchmark.RESEARCH_ROOT", tmp_path / "research")
     main(["--all", "--output", str(output)])
     assert json.loads((output / "synthetic" / "result.json").read_text())["research_only"] is True
+    controls = json.loads((output / "synthetic" / "controls.json").read_text())
+    assert controls["selected_control_count"] == 0
+    assert controls["selection_status"] == "insufficient_eligible_controls"
     assert len(json.loads((output / "summary.json").read_text())) == 1
+    assert len(json.loads((output / "validation_summary.json").read_text())) == 1
     with (output / "summary.csv").open() as stream:
+        summary = list(csv.DictReader(stream))[0]
+        assert summary["benchmark_id"] == "synthetic"
+        assert summary["control_count"] == "0"
+    with (output / "validation_summary.csv").open() as stream:
         assert list(csv.DictReader(stream))[0]["benchmark_id"] == "synthetic"
     assert production.read_text() == "unchanged"
