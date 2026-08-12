@@ -34,7 +34,7 @@ def test_magnitude_classification(magnitude, expected):
     assert magnitude_class(magnitude) == expected
 
 
-def test_recursive_discovery_ignores_nonqualifying_and_separates_quiet_year():
+def test_recursive_discovery_ignores_nonqualifying_and_separates_at_endpoint():
     events = [
         event("2020-01-01", 6),
         event("2020-06-01", 5.9),
@@ -43,7 +43,44 @@ def test_recursive_discovery_ignores_nonqualifying_and_separates_quiet_year():
         event("2023-01-01", 6),
     ]
     groups = discover_sequences(events)
-    assert [len(group) for group in groups] == [3, 1]
+    assert [len(group) for group in groups] == [1, 2, 1]
+
+
+@pytest.mark.parametrize(
+    ("offset", "expected_group_sizes"),
+    [(364, [2]), (365, [1, 1]), (366, [1, 1])],
+)
+def test_sequence_extension_uses_half_open_boundary(offset, expected_group_sizes):
+    first = date(2020, 1, 1)
+    events = [
+        event(first.isoformat(), 6.0, "a"),
+        event((first + timedelta(days=offset)).isoformat(), 6.0, "b"),
+    ]
+    assert [len(group) for group in discover_sequences(events)] == expected_group_sizes
+
+
+def test_recursive_extensions_each_use_latest_qualifying_event():
+    first = date(2020, 1, 1)
+    second = first + timedelta(days=300)
+    third = second + timedelta(days=364)
+    events = [
+        event(first.isoformat(), 6.0, "a"),
+        event(second.isoformat(), 6.0, "b"),
+        event(third.isoformat(), 6.0, "c"),
+    ]
+    assert [len(group) for group in discover_sequences(events)] == [3]
+
+
+def test_recursive_event_exactly_at_latest_endpoint_starts_new_sequence():
+    first = date(2020, 1, 1)
+    second = first + timedelta(days=300)
+    third = second + timedelta(days=365)
+    events = [
+        event(first.isoformat(), 6.0, "a"),
+        event(second.isoformat(), 6.0, "b"),
+        event(third.isoformat(), 6.0, "c"),
+    ]
+    assert [len(group) for group in discover_sequences(events)] == [2, 1]
 
 
 def test_same_day_events_are_retained():
@@ -66,7 +103,7 @@ def test_boundaries_censoring_monthly_between_and_post_coverage():
         second + timedelta(days=90),
     )
     assert result["requested_sequence_start"] == "2020-01-02"
-    assert result["requested_sequence_end"] == "2022-02-18"
+    assert result["requested_sequence_end"] == "2022-02-17"
     assert result["pre_event_coverage_complete"] is True
     assert result["sequence_closed"] is False
     assert result["censoring_status"] == "ongoing_or_right_censored"

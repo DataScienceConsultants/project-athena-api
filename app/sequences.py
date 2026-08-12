@@ -97,7 +97,11 @@ def discover_sequences(events: Sequence[dict[str, Any]], threshold: float = 6.0)
     groups: list[list[dict[str, Any]]] = []
     for event in qualifying:
         event_day = _date(_timestamp(event))
-        if not groups or event_day > _date(_timestamp(groups[-1][-1])) + timedelta(days=365):
+        # The frozen extension interval is half-open: an event at the endpoint
+        # starts a new sequence rather than extending the current sequence.
+        if not groups or event_day >= _date(_timestamp(groups[-1][-1])) + timedelta(
+            days=SEQUENCE_DAYS
+        ):
             groups.append([event])
         else:
             groups[-1].append(event)

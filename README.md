@@ -410,7 +410,9 @@ and above; the sequence trigger is M6.0+, so all three classes qualify.
 
 A sequence requests context from 365 days before its first qualifying event through 365 days after
 its last qualifying event. Each additional M6+ event within the current window recursively extends
-the endpoint to 365 days after that event. Boundaries are never selected from anomaly scores.
+the endpoint to 365 days after that event. The extension interval is half-open—
+`[last qualifying event, last qualifying event + 365 days)`—so an event exactly 365 days later
+starts a new sequence. Boundaries are never selected from anomaly scores.
 If the artifact lacks the full prehistory, the sequence is left-censored. If it ends before a quiet
 post-event year can be observed, the sequence remains open and is marked
 `ongoing_or_right_censored`; absent future observations are not treated as quiet days.
