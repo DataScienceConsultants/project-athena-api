@@ -28,3 +28,8 @@ def test_allowed_origins_reject_wildcard(monkeypatch):
 def test_report_snapshot_path_is_configurable(monkeypatch):
     monkeypatch.setenv("ATHENA_REPORT_SNAPSHOT_PATH", "/prepared/report.json")
     assert get_settings().report_snapshot_path == "/prepared/report.json"
+
+
+def test_research_bundle_path_is_configurable(monkeypatch):
+    monkeypatch.setenv("ATHENA_RESEARCH_BUNDLE_PATH", "/prepared/global-research")
+    assert get_settings().research_bundle_path == "/prepared/global-research"

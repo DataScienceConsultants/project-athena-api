@@ -7,9 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.routers import health, observatory, status, summary, timeseries, version
+from app.routers import health, observatory, research, status, summary, timeseries, version
 from app.schemas.common import DiscoveryResponse
 from app.services.athena import AthenaReportUnavailableError
+from app.services.research_artifacts import ResearchBundleUnavailableError
 
 settings = get_settings()
 app = FastAPI(
@@ -47,6 +48,26 @@ async def report_unavailable_handler(
     )
 
 
+@app.exception_handler(ResearchBundleUnavailableError)
+async def research_bundle_unavailable_handler(
+    request: Request, exc: ResearchBundleUnavailableError
+) -> JSONResponse:
+    logging.getLogger(__name__).error(
+        "Athena research bundle unavailable for %s: %s",
+        request.url.path,
+        exc,
+    )
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": {
+                "code": "athena_research_bundle_unavailable",
+                "message": "Prepared Athena research artifacts are currently unavailable.",
+            }
+        },
+    )
+
+
 @app.get("/", response_model=DiscoveryResponse, tags=["service"], summary="Discover the service")
 def root() -> DiscoveryResponse:
     return DiscoveryResponse(
@@ -60,6 +81,7 @@ def root() -> DiscoveryResponse:
             "observatory": "/observatory",
             "timeseries": "/timeseries",
             "chart_timeseries": "/timeseries/chart",
+            "research_summary": "/research/global/summary",
         },
     )
 
@@ -70,3 +92,4 @@ app.include_router(status.router)
 app.include_router(summary.router)
 app.include_router(observatory.router)
 app.include_router(timeseries.router)
+app.include_router(research.router)
