@@ -19,6 +19,7 @@ class Settings:
     default_region_key: str = "puerto_rico"
     default_catalog_path: str = "data/catalog.csv"
     report_snapshot_path: str = "data/observatory_report.json"
+    research_bundle_path: str = "data/global_research/global-m6-1976-2025"
     catalog_freshness_hours: int = 72
     environment_name: str = "development"
     allowed_origins: tuple[str, ...] = LOCAL_ALLOWED_ORIGINS
@@ -55,6 +56,10 @@ def get_settings() -> Settings:
         report_snapshot_path=os.getenv(
             "ATHENA_REPORT_SNAPSHOT_PATH",
             defaults.report_snapshot_path,
+        ),
+        research_bundle_path=os.getenv(
+            "ATHENA_RESEARCH_BUNDLE_PATH",
+            defaults.research_bundle_path,
         ),
         catalog_freshness_hours=int(
             os.getenv("ATHENA_CATALOG_FRESHNESS_HOURS", defaults.catalog_freshness_hours)
