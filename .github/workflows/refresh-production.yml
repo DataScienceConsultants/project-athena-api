@@ -61,6 +61,27 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e '.[dev]'
 
+      - name: Stage Athena region configuration
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          import src
+
+          source = Path("config/regions.json")
+          target = Path(src.__file__).resolve().parent.parent / "config" / "regions.json"
+          if not source.is_file():
+              raise SystemExit(f"Repository region configuration is missing: {source}")
+
+          target.parent.mkdir(parents=True, exist_ok=True)
+          shutil.copyfile(source, target)
+          if not target.is_file():
+              raise SystemExit(f"Athena region configuration was not staged: {target}")
+
+          print(f"Staged Athena region configuration: {target}")
+          PY
+
       - name: Build fresh Puerto Rico catalog and Observatory snapshot
         run: python -m app.bootstrap_catalog
 
