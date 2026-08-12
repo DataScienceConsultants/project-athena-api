@@ -265,6 +265,41 @@ These measurements are not probabilities, forecasts, risks, or operational alert
 benchmark analysis describes historical associations and does not establish earthquake prediction
 capability.**
 
+## Athena Control-Window Validation
+
+The benchmark runner treats the curated earthquakes as **cases** and deterministically samples
+ordinary comparison **control windows** from the same region's existing research time series.
+Selection is independent of Athena anomaly score: an eligible anchor needs all 30 preceding UTC
+days of artifact coverage and must not be within 30 days before or after (inclusive) a day whose
+`maximum_magnitude` is M7.0 or greater. No network data is fetched.
+
+Cases and controls use the same shared 30-, 14-, and 7-day feature calculations, always excluding
+the anchor day. Outputs report descriptive empirical percentile ranks, fractions of controls at or
+above the case, recency null counts, and regime distributions. These retrospective comparisons are
+not p-values, probabilities, forecasts, or claims of predictive performance; Athena scoring remains
+frozen.
+
+Sampling is reproducible with `--seed` (default `42`) and requests 100 controls per benchmark by
+default. Controls may overlap. Pass `--non-overlapping-controls` to require their anchor dates to be
+at least 30 days apart; the output clearly reports when fewer eligible controls exist than requested.
+Catalogs marked limited are retained and labeled, while insufficient catalogs are rejected.
+
+```bash
+python -m app.benchmark \
+  --benchmark puerto_rico_2020_01_07 \
+  --controls-per-benchmark 100 \
+  --seed 42
+
+python -m app.benchmark \
+  --all \
+  --controls-per-benchmark 100 \
+  --seed 42
+```
+
+Each case writes `controls.json` beside `result.json`. Full runs also write JSON and CSV summary and
+validation-summary files with one row per earthquake case. The compact control output contains only
+anchor features, not a duplicate of the underlying regional time series.
+
 ## Endpoints
 
 - `GET /health` — lightweight service health; never runs Athena.
