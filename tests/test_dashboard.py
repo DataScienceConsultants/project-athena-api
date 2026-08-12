@@ -18,7 +18,7 @@ def test_dashboard_assets_are_served(client):
     assert ".dashboard-grid" in stylesheet.text
 
     assert script.status_code == 200
-    assert "application/javascript" in script.headers["content-type"]
+    assert script.headers["content-type"].startswith("text/javascript")
     assert 'fetchJSON("/summary")' in script.text
     assert '"/timeseries/chart"' in script.text
 
