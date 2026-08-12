@@ -89,7 +89,9 @@ class ResearchArtifactService:
             )
         payload = self._json(path)
         if not isinstance(payload, dict) or payload.get("type") != "FeatureCollection":
-            raise ResearchBundleUnavailableError("faults.geojson must be a GeoJSON FeatureCollection")
+            raise ResearchBundleUnavailableError(
+                "faults.geojson must be a GeoJSON FeatureCollection"
+            )
         return {
             **payload,
             "available": True,
@@ -216,7 +218,9 @@ class ResearchArtifactService:
             raise ResearchBundleUnavailableError(f"Prepared research artifact is missing: {name}")
         payload = self._json(path)
         if not isinstance(payload, dict):
-            raise ResearchBundleUnavailableError(f"Prepared research artifact must be an object: {name}")
+            raise ResearchBundleUnavailableError(
+                f"Prepared research artifact must be an object: {name}"
+            )
         return payload
 
     def _required_csv(self, name: str) -> list[dict[str, str]]:
@@ -231,7 +235,9 @@ class ResearchArtifactService:
             with path.open("r", encoding="utf-8") as source:
                 return json.load(source)
         except (OSError, json.JSONDecodeError) as exc:
-            raise ResearchBundleUnavailableError(f"Could not read prepared artifact: {path.name}") from exc
+            raise ResearchBundleUnavailableError(
+                f"Could not read prepared artifact: {path.name}"
+            ) from exc
 
     @staticmethod
     def _csv(path: Path) -> list[dict[str, str]]:
@@ -239,7 +245,9 @@ class ResearchArtifactService:
             with path.open("r", encoding="utf-8", newline="") as source:
                 return list(csv.DictReader(source))
         except OSError as exc:
-            raise ResearchBundleUnavailableError(f"Could not read prepared artifact: {path.name}") from exc
+            raise ResearchBundleUnavailableError(
+                f"Could not read prepared artifact: {path.name}"
+            ) from exc
 
     @classmethod
     def _event_payload(cls, row: dict[str, str]) -> dict[str, Any]:
@@ -276,7 +284,9 @@ class ResearchArtifactService:
         try:
             return float(value)
         except ValueError as exc:
-            raise ResearchBundleUnavailableError(f"Invalid numeric research artifact value: {value}") from exc
+            raise ResearchBundleUnavailableError(
+                f"Invalid numeric research artifact value: {value}"
+            ) from exc
 
     @staticmethod
     def _parse_time(value: str) -> datetime:
