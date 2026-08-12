@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#071018">
+  <title>Athena Research Dashboard</title>
+  <meta name="description" content="Project Athena historical seismic research dashboard. Descriptive, retrospective, and nonpredictive.">
+  <link rel="stylesheet" href="/dashboard/assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/dashboard" aria-label="Athena Research Dashboard home">
+        <span class="brand-mark" aria-hidden="true">A</span>
+        <span>
+          <strong>ATHENA</strong>
+          <small>Research Observatory</small>
+        </span>
+      </a>
+      <div class="topbar-actions">
+        <span id="service-state" class="service-state" data-state="loading">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span>Connecting</span>
+        </span>
+        <button id="refresh-button" class="button button-secondary" type="button">Refresh data</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="dashboard-title">
+        <div>
+          <p class="eyebrow">PROJECT ATHENA · HISTORICAL SEISMIC INTELLIGENCE</p>
+          <h1 id="dashboard-title">Research Dashboard</h1>
+          <p id="region-heading" class="hero-subtitle">Loading observatory region…</p>
+        </div>
+        <div class="hero-meta">
+          <span>Catalog as of</span>
+          <strong id="catalog-as-of">—</strong>
+        </div>
+      </section>
+
+      <aside class="research-notice" role="note" aria-label="Research disclaimer">
+        <span class="notice-icon" aria-hidden="true">i</span>
+        <p><strong>Research use only.</strong> Athena describes historical seismic behavior and anomaly patterns. It does not predict earthquakes, issue warnings, or estimate future earthquake probability.</p>
+      </aside>
+
+      <section class="kpi-grid" aria-label="Current historical observatory summary">
+        <article class="kpi-card accent-card">
+          <div class="kpi-label">Latest anomaly score</div>
+          <div class="kpi-value-row">
+            <strong id="anomaly-score" class="kpi-value">—</strong>
+            <span id="anomaly-level" class="metric-badge">—</span>
+          </div>
+          <p>Historical deviation from Athena baseline</p>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-label">Temporal trend</div>
+          <div class="kpi-value-row">
+            <strong id="trend-direction" class="kpi-value kpi-text">—</strong>
+            <span id="trend-strength" class="metric-badge">—</span>
+          </div>
+          <p>Direction across the analyzed historical series</p>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-label">Catalog events</div>
+          <div class="kpi-value-row">
+            <strong id="event-count" class="kpi-value">—</strong>
+          </div>
+          <p>Source events represented by the current report</p>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-label">Detected swarms</div>
+          <div class="kpi-value-row">
+            <strong id="swarm-count" class="kpi-value">—</strong>
+          </div>
+          <p>Historical swarm structures in the current analysis</p>
+        </article>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="panel chart-panel">
+          <div class="panel-heading chart-heading">
+            <div>
+              <p class="eyebrow">HISTORICAL TIME SERIES</p>
+              <h2 id="chart-title">Anomaly score</h2>
+            </div>
+            <div class="chart-controls" aria-label="Chart controls">
+              <div class="segmented" id="metric-selector" role="group" aria-label="Metric">
+                <button class="segment active" type="button" data-metric="anomaly_score">Anomaly</button>
+                <button class="segment" type="button" data-metric="event_count">Events</button>
+                <button class="segment" type="button" data-metric="maximum_magnitude">Magnitude</button>
+                <button class="segment" type="button" data-metric="total_energy_joules">Energy</button>
+                <button class="segment" type="button" data-metric="mean_depth_km">Depth</button>
+              </div>
+              <div class="segmented compact" id="range-selector" role="group" aria-label="Time range">
+                <button class="segment" type="button" data-days="30">30D</button>
+                <button class="segment" type="button" data-days="90">90D</button>
+                <button class="segment active" type="button" data-days="365">1Y</button>
+                <button class="segment" type="button" data-days="all">All</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="chart-stat-row" class="chart-stat-row">
+            <div><span>Latest</span><strong id="chart-latest">—</strong></div>
+            <div><span>Minimum</span><strong id="chart-min">—</strong></div>
+            <div><span>Maximum</span><strong id="chart-max">—</strong></div>
+            <div><span>Observations</span><strong id="chart-count">—</strong></div>
+          </div>
+
+          <div class="chart-wrap">
+            <svg id="history-chart" class="history-chart" viewBox="0 0 960 360" role="img" aria-labelledby="chart-title chart-description"></svg>
+            <p id="chart-description" class="sr-only">Historical Athena metric time series.</p>
+            <div id="chart-empty" class="chart-empty" hidden>No chart observations are available for this selection.</div>
+          </div>
+          <div class="chart-axis-caption">
+            <span id="chart-start">—</span>
+            <span id="chart-frequency">Daily historical observations</span>
+            <span id="chart-end">—</span>
+          </div>
+        </article>
+
+        <aside class="side-stack">
+          <article class="panel summary-panel">
+            <div class="panel-heading">
+              <p class="eyebrow">ATHENA INTERPRETATION</p>
+              <h2>Observatory summary</h2>
+            </div>
+            <p id="executive-summary" class="summary-copy">Loading Athena summary…</p>
+            <dl class="detail-list">
+              <div>
+                <dt>Overall status</dt>
+                <dd id="overall-status">—</dd>
+              </div>
+              <div>
+                <dt>Analysis periods</dt>
+                <dd id="period-count">—</dd>
+              </div>
+              <div>
+                <dt>Report mode</dt>
+                <dd>Descriptive / nonpredictive</dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="panel roadmap-panel">
+            <div class="panel-heading">
+              <p class="eyebrow">NEXT RESEARCH LAYER</p>
+              <h2>50-year global system</h2>
+            </div>
+            <div class="roadmap-list">
+              <div class="roadmap-item">
+                <span class="roadmap-number">01</span>
+                <div><strong>Global historical catalog</strong><small>Region-normalized multi-decade seismic archive</small></div>
+              </div>
+              <div class="roadmap-item">
+                <span class="roadmap-number">02</span>
+                <div><strong>Fault context</strong><small>Distance, tectonic setting, and fault association layers</small></div>
+              </div>
+              <div class="roadmap-item">
+                <span class="roadmap-number">03</span>
+                <div><strong>Sequence cohorts</strong><small>M6+ retrospective sequence and control comparisons</small></div>
+              </div>
+              <div class="roadmap-item">
+                <span class="roadmap-number">04</span>
+                <div><strong>Cross-region research</strong><small>Comparable historical patterns without prediction claims</small></div>
+              </div>
+            </div>
+          </article>
+        </aside>
+      </section>
+
+      <section class="panel api-panel">
+        <div>
+          <p class="eyebrow">DATA PROVENANCE</p>
+          <h2>Reproducible API-backed research</h2>
+          <p>The dashboard renders Athena’s existing serialized research outputs. Scientific calculations remain in the Athena engine; this interface is a delivery and exploration layer.</p>
+        </div>
+        <nav class="api-links" aria-label="Athena API resources">
+          <a href="/summary" target="_blank" rel="noreferrer">Summary JSON</a>
+          <a href="/observatory" target="_blank" rel="noreferrer">Full Observatory</a>
+          <a href="/timeseries/chart" target="_blank" rel="noreferrer">Chart data</a>
+          <a href="/docs" target="_blank" rel="noreferrer">API docs</a>
+        </nav>
+      </section>
+    </main>
+
+    <footer>
+      <span>Project Athena · Data Science Consultants</span>
+      <span id="footer-status">Historical research interface</span>
+    </footer>
+  </div>
+
+  <div id="error-banner" class="error-banner" role="alert" hidden>
+    <strong>Dashboard data unavailable.</strong>
+    <span id="error-message">Athena API could not be reached.</span>
+  </div>
+
+  <script src="/dashboard/assets/app.js" defer></script>
+</body>
+</html>
