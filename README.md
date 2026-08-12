@@ -400,3 +400,31 @@ Results describe historical seismic observations and are **nonpredictive**. This
 predict earthquakes and does not estimate future earthquake probability. It does not generate
 alerts and does not replace official earthquake, tsunami, emergency-management, or public-safety
 information. Consult the responsible government authorities for current official information.
+
+## Athena Seismic Sequence Analysis
+
+The research-only sequence runner adds a descriptive, retrospective layer above frozen Athena
+research artifacts. It does not alter anomaly scoring or production behavior. Magnitudes use the
+standardized research terms **strong** for M6.0–6.9, **major** for M7.0–7.9, and **great** for M8.0
+and above; the sequence trigger is M6.0+, so all three classes qualify.
+
+A sequence requests context from 365 days before its first qualifying event through 365 days after
+its last qualifying event. Each additional M6+ event within the current window recursively extends
+the endpoint to 365 days after that event. Boundaries are never selected from anomaly scores.
+If the artifact lacks the full prehistory, the sequence is left-censored. If it ends before a quiet
+post-event year can be observed, the sequence remains open and is marked
+`ongoing_or_right_censored`; absent future observations are not treated as quiet days.
+
+Generate output under `data/sequences/<region_key>` without network access:
+
+```bash
+python -m app.sequences --region puerto_rico
+python -m app.sequences --region colombia
+python -m app.sequences --all
+```
+
+The source `data/research/<region_key>/catalog.csv` and `timeseries.json` must already exist. The
+runner reports event context, deterministic pre/between/post windows, and monthly pre-event
+trajectories. These measurements do not assign predictive phases or make forecasts. **Observed
+temporal association does not establish that an earlier earthquake caused, predicted, or served as
+a precursor to a later earthquake.**
