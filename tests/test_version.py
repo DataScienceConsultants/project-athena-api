@@ -15,6 +15,7 @@ def test_version_is_successful(client):
 def test_root_discovers_required_routes(client):
     endpoints = client.get("/").json()["endpoints"]
     expected_endpoints = {
+        "/dashboard",
         "/health",
         "/version",
         "/status",
