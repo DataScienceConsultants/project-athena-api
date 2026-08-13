@@ -24,7 +24,7 @@ jobs:
       ATHENA_REPORT_SNAPSHOT_PATH: data/observatory_report.json
       ATHENA_CATALOG_FRESHNESS_HOURS: "72"
       ATHENA_RESEARCH_BUNDLE_PATH: data/global_research/global-m6-1976-2025
-      ATHENA_RESEARCH_RELEASE_TAG: research-global-m6-1976-2025-v1
+      ATHENA_RESEARCH_RELEASE_TAG: research-global-m6-1976-2025-v2
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       GCP_REGION: ${{ vars.GCP_REGION || 'us-east1' }}
       GCP_CLOUD_RUN_SERVICE: ${{ vars.GCP_CLOUD_RUN_SERVICE || 'project-athena-api' }}
@@ -115,6 +115,8 @@ jobs:
           test -f "$ATHENA_RESEARCH_BUNDLE_PATH/catalog.csv"
           test -f "$ATHENA_RESEARCH_BUNDLE_PATH/fault_associations.csv"
           test -f "$ATHENA_RESEARCH_BUNDLE_PATH/faults.geojson"
+          test -f "$ATHENA_RESEARCH_BUNDLE_PATH/event_plate_context.csv"
+          test -f "$ATHENA_RESEARCH_BUNDLE_PATH/plate_boundaries.geojson"
 
       - name: Validate global research bundle
         run: |
@@ -128,6 +130,7 @@ jobs:
           metadata = json.loads((bundle / "metadata.json").read_text(encoding="utf-8"))
 
           expected = {
+              "bundle_schema_version": 2,
               "profile_id": "global-m6-1976-2025",
               "start_utc": "1976-01-01T00:00:00Z",
               "end_utc": "2026-01-01T00:00:00Z",
@@ -136,6 +139,10 @@ jobs:
               "report_is_nonpredictive": True,
               "fault_context_included": True,
               "fault_geojson_included": True,
+              "plate_boundary_context_included": True,
+              "plate_boundary_geojson_included": True,
+              "plate_boundary_step_count": 5819,
+              "plate_boundary_geojson_feature_count": 5819,
           }
           for key, value in expected.items():
               if metadata.get(key) != value:
@@ -157,10 +164,50 @@ jobs:
           if len(faults.get("features", [])) != metadata.get("fault_geojson_feature_count"):
               raise SystemExit("Research fault feature count does not match metadata")
 
+          boundaries = json.loads(
+              (bundle / "plate_boundaries.geojson").read_text(encoding="utf-8")
+          )
+          if boundaries.get("type") != "FeatureCollection":
+              raise SystemExit("Research plate_boundaries.geojson is not a FeatureCollection")
+          if len(boundaries.get("features", [])) != 5819:
+              raise SystemExit("Research PB2002 boundary-step count is invalid")
+
+          with (bundle / "event_plate_context.csv").open(
+              "r", encoding="utf-8", newline=""
+          ) as source:
+              plate_connection_count = sum(1 for _ in csv.DictReader(source))
+          if plate_connection_count != metadata.get(
+              "event_plate_boundary_association_count"
+          ):
+              raise SystemExit("Research plate-connection row count does not match metadata")
+          if plate_connection_count <= 0:
+              raise SystemExit("Research event-to-plate-boundary context is empty")
+
+          citations = {
+              item.get("source_key"): item
+              for item in metadata.get("source_citations", [])
+              if isinstance(item, dict)
+          }
+          bird = citations.get("bird_pb2002") or {}
+          if (bird.get("citation") or {}).get("doi") != "10.1029/2001GC000252":
+              raise SystemExit("Bird PB2002 DOI citation is missing or incorrect")
+          if bird.get("distribution_license") != "ODC-By-1.0":
+              raise SystemExit("PB2002 distribution-license provenance is missing")
+          if bird.get("distribution_commit") != (
+              "339b0c56563c118307b1f4542703047f5f698fae"
+          ):
+              raise SystemExit("PB2002 pinned distribution commit is missing")
+          if bird.get("observed_git_blob_sha") != (
+              "b48506d79c614b241ce26cf949492ee7c6676d60"
+          ):
+              raise SystemExit("PB2002 pinned source blob SHA is missing")
+
           print(
-              "Validated durable research bundle: "
+              "Validated durable research bundle v2: "
               f"events={catalog_count}, "
               f"fault_features={metadata.get('fault_geojson_feature_count')}, "
+              f"plate_steps={metadata.get('plate_boundary_step_count')}, "
+              f"plate_connections={plate_connection_count}, "
               "mode=retrospective/nonpredictive"
           )
           PY
@@ -258,7 +305,15 @@ jobs:
                   availability = research.get("availability") or {}
                   if research.get("report_is_nonpredictive") is not True:
                       raise RuntimeError("Research summary lost nonpredictive marker")
-                  for key in ("catalog", "fault_associations", "fault_geometry"):
+                  if research.get("bundle_schema_version") != 2:
+                      raise RuntimeError("Research API is not serving bundle schema v2")
+                  for key in (
+                      "catalog",
+                      "fault_associations",
+                      "fault_geometry",
+                      "plate_boundaries",
+                      "plate_connections",
+                  ):
                       if availability.get(key) is not True:
                           raise RuntimeError(
                               f"Research artifact is unavailable after deploy: {key}"
@@ -267,13 +322,42 @@ jobs:
                       "catalog_event_count"
                   ] <= 0:
                       raise RuntimeError("Research catalog event count is invalid")
+                  if research.get("plate_boundary_step_count") != 5819:
+                      raise RuntimeError("Research PB2002 boundary-step count is invalid")
+                  if not isinstance(
+                      research.get("event_plate_boundary_association_count"), int
+                  ) or research["event_plate_boundary_association_count"] <= 0:
+                      raise RuntimeError("Research plate-connection count is invalid")
+
+                  boundary_response = requests.get(
+                      f"{base_url}/research/plate-boundaries", timeout=20
+                  )
+                  boundary_response.raise_for_status()
+                  boundaries = boundary_response.json()
+                  if boundaries.get("available") is not True:
+                      raise RuntimeError("Plate-boundary geometry endpoint is unavailable")
+                  if len(boundaries.get("features", [])) != 5819:
+                      raise RuntimeError("Plate-boundary geometry endpoint count is invalid")
+
+                  connections_response = requests.get(
+                      f"{base_url}/research/plate-connections", timeout=20
+                  )
+                  connections_response.raise_for_status()
+                  plate_connections = connections_response.json()
+                  if plate_connections.get("available") is not True:
+                      raise RuntimeError("Plate-connection endpoint is unavailable")
+                  if len(plate_connections.get("items", [])) != research.get(
+                      "event_plate_boundary_association_count"
+                  ):
+                      raise RuntimeError("Plate-connection endpoint count is invalid")
 
                   print(
                       "Production verification passed: "
                       f"latest_anomaly_score={float(score):.1f}, "
                       f"catalog_as_of={payload.get('catalog_as_of_utc')}, "
                       f"research_events={research.get('catalog_event_count')}, "
-                      f"fault_geometry={availability.get('fault_geometry')}"
+                      f"plate_steps={research.get('plate_boundary_step_count')}, "
+                      f"plate_connections={research.get('event_plate_boundary_association_count')}"
                   )
                   break
               except Exception as exc:  # deployment may need a few seconds to settle
