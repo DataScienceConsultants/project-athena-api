@@ -26,6 +26,7 @@ class ResearchArtifactService:
             "fault_associations": (self.bundle_path / "fault_associations.csv").is_file(),
             "fault_geometry": (self.bundle_path / "faults.geojson").is_file(),
             "plate_boundaries": (self.bundle_path / "plate_boundaries.geojson").is_file(),
+            "plate_connections": (self.bundle_path / "event_plate_context.csv").is_file(),
             "sequences": (self.bundle_path / "sequences.json").is_file(),
         }
         return {
@@ -197,6 +198,44 @@ class ResearchArtifactService:
             "semantics": (
                 "Geographic context only. Nearest mapped fault association is not causal "
                 "attribution and does not imply future earthquake probability."
+            ),
+        }
+
+    def plate_connections(self) -> dict[str, Any]:
+        path = self.bundle_path / "event_plate_context.csv"
+        if not path.is_file():
+            return {
+                "items": [],
+                "available": False,
+                "reason": (
+                    "Prepared event-to-plate-boundary associations are not present in this bundle."
+                ),
+                "report_is_nonpredictive": True,
+            }
+        items = []
+        for row in self._csv(path):
+            items.append(
+                {
+                    "event_id": row["event_id"],
+                    "step_id": row["step_id"],
+                    "boundary_id": row["boundary_id"],
+                    "left_plate": row["left_plate"],
+                    "right_plate": row["right_plate"],
+                    "boundary_class": row["boundary_class"],
+                    "polarity": row.get("polarity") or None,
+                    "distance_km": self._float_or_none(row.get("distance_km")),
+                    "source": row.get("source") or None,
+                    "relationship": "nearest_mapped_plate_boundary_context",
+                }
+            )
+        return {
+            "items": items,
+            "available": True,
+            "report_is_nonpredictive": True,
+            "semantics": (
+                "Tectonic context only. Nearest mapped PB2002 boundary association, adjacent "
+                "plate identifiers, and source-defined boundary class are not causal attribution, "
+                "stress-transfer calculations, or future-earthquake probabilities."
             ),
         }
 
