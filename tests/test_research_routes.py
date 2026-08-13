@@ -12,12 +12,14 @@ def _write_bundle(root: Path) -> None:
     (root / "metadata.json").write_text(
         json.dumps(
             {
+                "bundle_schema_version": 2,
                 "profile_id": "global-m6-1976-2025",
                 "start_utc": "1976-01-01T00:00:00Z",
                 "end_utc": "2026-01-01T00:00:00Z",
                 "minimum_magnitude": 6.0,
                 "catalog_event_count": 3,
                 "fault_context_included": True,
+                "plate_boundary_context_included": True,
                 "catalog_source": "USGS ComCat",
             }
         ),
@@ -103,6 +105,61 @@ def _write_bundle(root: Path) -> None:
                 "fault_source": "GEM Global Active Faults Database",
             }
         )
+    (root / "plate_boundaries.geojson").write_text(
+        json.dumps(
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "id": "pb2002-step-1",
+                        "properties": {
+                            "boundary_id": "NA-PA",
+                            "left_plate": "NA",
+                            "right_plate": "PA",
+                            "boundary_class": "OTF",
+                        },
+                        "geometry": {
+                            "type": "LineString",
+                            "coordinates": [[179.0, 9.0], [-179.0, 11.0]],
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with (root / "event_plate_context.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as target:
+        writer = csv.DictWriter(
+            target,
+            fieldnames=(
+                "event_id",
+                "step_id",
+                "boundary_id",
+                "left_plate",
+                "right_plate",
+                "boundary_class",
+                "polarity",
+                "distance_km",
+                "source",
+            ),
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "event_id": "west",
+                "step_id": "pb2002-step-1",
+                "boundary_id": "NA-PA",
+                "left_plate": "NA",
+                "right_plate": "PA",
+                "boundary_class": "OTF",
+                "polarity": "-",
+                "distance_km": "18.25",
+                "source": "Bird PB2002 plate boundary model",
+            }
+        )
 
 
 def _override_bundle(path: Path) -> None:
@@ -122,6 +179,8 @@ def test_research_summary_reports_artifact_availability(client, tmp_path):
     assert payload["availability"]["catalog"] is True
     assert payload["availability"]["fault_associations"] is True
     assert payload["availability"]["fault_geometry"] is False
+    assert payload["availability"]["plate_boundaries"] is True
+    assert payload["availability"]["plate_connections"] is True
     assert payload["report_is_nonpredictive"] is True
 
 
@@ -173,6 +232,47 @@ def test_connections_deliver_prepared_fault_associations(client, tmp_path):
     assert payload["items"][0]["fault_id"] == "fault-1"
     assert payload["items"][0]["distance_km"] == 24.5
     assert "not causal attribution" in payload["semantics"]
+
+
+def test_plate_boundaries_deliver_prepared_pb2002_geometry(client, tmp_path):
+    bundle = tmp_path / "bundle"
+    _write_bundle(bundle)
+    _override_bundle(bundle)
+
+    response = client.get("/research/plate-boundaries")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["features"][0]["properties"]["boundary_id"] == "NA-PA"
+    assert payload["features"][0]["properties"]["left_plate"] == "NA"
+    assert payload["report_is_nonpredictive"] is True
+
+
+def test_plate_connections_deliver_prepared_event_context(client, tmp_path):
+    bundle = tmp_path / "bundle"
+    _write_bundle(bundle)
+    _override_bundle(bundle)
+
+    response = client.get("/research/plate-connections")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["items"][0] == {
+        "event_id": "west",
+        "step_id": "pb2002-step-1",
+        "boundary_id": "NA-PA",
+        "left_plate": "NA",
+        "right_plate": "PA",
+        "boundary_class": "OTF",
+        "polarity": "-",
+        "distance_km": 18.25,
+        "source": "Bird PB2002 plate boundary model",
+        "relationship": "nearest_mapped_plate_boundary_context",
+    }
+    assert "not causal attribution" in payload["semantics"]
+    assert "future-earthquake probabilities" in payload["semantics"]
 
 
 def test_missing_required_bundle_returns_503(client, tmp_path):
