@@ -72,6 +72,14 @@ def plate_boundaries(service: ResearchService) -> dict:
     return service.plate_boundaries()
 
 
+@router.get(
+    "/plate-connections",
+    summary="Read prepared event-to-plate-boundary research connections",
+)
+def plate_connections(service: ResearchService) -> dict:
+    return service.plate_connections()
+
+
 @router.get("/sequences", summary="Read prepared retrospective earthquake sequences")
 def sequences(service: ResearchService) -> dict:
     return service.sequences()
