@@ -23,6 +23,8 @@ jobs:
       ATHENA_DEFAULT_CATALOG_PATH: data/catalog.csv
       ATHENA_REPORT_SNAPSHOT_PATH: data/observatory_report.json
       ATHENA_CATALOG_FRESHNESS_HOURS: "72"
+      ATHENA_RESEARCH_BUNDLE_PATH: data/global_research/global-m6-1976-2025
+      ATHENA_RESEARCH_RELEASE_TAG: research-global-m6-1976-2025-v1
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       GCP_REGION: ${{ vars.GCP_REGION || 'us-east1' }}
       GCP_CLOUD_RUN_SERVICE: ${{ vars.GCP_CLOUD_RUN_SERVICE || 'project-athena-api' }}
@@ -82,6 +84,87 @@ jobs:
           print(f"Staged Athena region configuration: {target}")
           PY
 
+      - name: Stage durable global research bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RELEASE_BASE="https://github.com/DataScienceConsultants/project-athena/releases/download/${ATHENA_RESEARCH_RELEASE_TAG}"
+          ARCHIVE="athena-global-m6-1976-2025.zip"
+          CHECKSUM="${ARCHIVE}.sha256"
+          TMP_DIR="$(mktemp -d)"
+          trap 'rm -rf "$TMP_DIR"' EXIT
+
+          curl --fail --location --retry 4 --retry-all-errors \
+            --output "$TMP_DIR/$ARCHIVE" \
+            "$RELEASE_BASE/$ARCHIVE"
+          curl --fail --location --retry 4 --retry-all-errors \
+            --output "$TMP_DIR/$CHECKSUM" \
+            "$RELEASE_BASE/$CHECKSUM"
+
+          (
+            cd "$TMP_DIR"
+            sha256sum --check "$CHECKSUM"
+          )
+
+          rm -rf "$ATHENA_RESEARCH_BUNDLE_PATH"
+          mkdir -p "$(dirname "$ATHENA_RESEARCH_BUNDLE_PATH")"
+          unzip -q "$TMP_DIR/$ARCHIVE" -d "$(dirname "$ATHENA_RESEARCH_BUNDLE_PATH")"
+
+          test -f "$ATHENA_RESEARCH_BUNDLE_PATH/metadata.json"
+          test -f "$ATHENA_RESEARCH_BUNDLE_PATH/catalog.csv"
+          test -f "$ATHENA_RESEARCH_BUNDLE_PATH/fault_associations.csv"
+          test -f "$ATHENA_RESEARCH_BUNDLE_PATH/faults.geojson"
+
+      - name: Validate global research bundle
+        run: |
+          python - <<'PY'
+          import csv
+          import json
+          import os
+          from pathlib import Path
+
+          bundle = Path(os.environ["ATHENA_RESEARCH_BUNDLE_PATH"])
+          metadata = json.loads((bundle / "metadata.json").read_text(encoding="utf-8"))
+
+          expected = {
+              "profile_id": "global-m6-1976-2025",
+              "start_utc": "1976-01-01T00:00:00Z",
+              "end_utc": "2026-01-01T00:00:00Z",
+              "minimum_magnitude": 6.0,
+              "research_mode": "retrospective_global",
+              "report_is_nonpredictive": True,
+              "fault_context_included": True,
+              "fault_geojson_included": True,
+          }
+          for key, value in expected.items():
+              if metadata.get(key) != value:
+                  raise SystemExit(
+                      f"Unexpected research metadata {key}: "
+                      f"{metadata.get(key)!r}; expected {value!r}"
+                  )
+
+          with (bundle / "catalog.csv").open(
+              "r", encoding="utf-8", newline=""
+          ) as source:
+              catalog_count = sum(1 for _ in csv.DictReader(source))
+          if catalog_count != metadata.get("catalog_event_count"):
+              raise SystemExit("Research catalog row count does not match metadata")
+
+          faults = json.loads((bundle / "faults.geojson").read_text(encoding="utf-8"))
+          if faults.get("type") != "FeatureCollection":
+              raise SystemExit("Research faults.geojson is not a FeatureCollection")
+          if len(faults.get("features", [])) != metadata.get("fault_geojson_feature_count"):
+              raise SystemExit("Research fault feature count does not match metadata")
+
+          print(
+              "Validated durable research bundle: "
+              f"events={catalog_count}, "
+              f"fault_features={metadata.get('fault_geojson_feature_count')}, "
+              "mode=retrospective/nonpredictive"
+          )
+          PY
+
       - name: Build fresh Puerto Rico catalog and Observatory snapshot
         run: python -m app.bootstrap_catalog
 
@@ -139,7 +222,7 @@ jobs:
           service: ${{ env.GCP_CLOUD_RUN_SERVICE }}
           source: .
 
-      - name: Verify deployed anomaly score
+      - name: Verify deployed Observatory and research APIs
         env:
           DEPLOYED_URL: ${{ steps.deploy.outputs.url }}
         run: |
@@ -166,10 +249,31 @@ jobs:
                       raise RuntimeError(
                           f"latest_anomaly_score is not finite: {score!r}"
                       )
+
+                  research_response = requests.get(
+                      f"{base_url}/research/global/summary", timeout=20
+                  )
+                  research_response.raise_for_status()
+                  research = research_response.json()
+                  availability = research.get("availability") or {}
+                  if research.get("report_is_nonpredictive") is not True:
+                      raise RuntimeError("Research summary lost nonpredictive marker")
+                  for key in ("catalog", "fault_associations", "fault_geometry"):
+                      if availability.get(key) is not True:
+                          raise RuntimeError(
+                              f"Research artifact is unavailable after deploy: {key}"
+                          )
+                  if not isinstance(research.get("catalog_event_count"), int) or research[
+                      "catalog_event_count"
+                  ] <= 0:
+                      raise RuntimeError("Research catalog event count is invalid")
+
                   print(
                       "Production verification passed: "
                       f"latest_anomaly_score={float(score):.1f}, "
-                      f"catalog_as_of={payload.get('catalog_as_of_utc')}"
+                      f"catalog_as_of={payload.get('catalog_as_of_utc')}, "
+                      f"research_events={research.get('catalog_event_count')}, "
+                      f"fault_geometry={availability.get('fault_geometry')}"
                   )
                   break
               except Exception as exc:  # deployment may need a few seconds to settle
