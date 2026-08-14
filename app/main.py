@@ -1,10 +1,12 @@
 """FastAPI application factory and deterministic route registration."""
 
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.routers import health, observatory, research, status, summary, timeseries, version
@@ -13,6 +15,8 @@ from app.services.athena import AthenaReportUnavailableError
 from app.services.research_artifacts import ResearchBundleUnavailableError
 
 settings = get_settings()
+DASHBOARD_DIR = Path(__file__).resolve().parent / "dashboard"
+
 app = FastAPI(
     title="Project Athena API",
     version="0.1.0",
@@ -29,6 +33,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET"],
     allow_headers=["*"],
+)
+app.mount(
+    "/dashboard/assets",
+    StaticFiles(directory=DASHBOARD_DIR),
+    name="dashboard-assets",
 )
 
 
@@ -74,6 +83,7 @@ def root() -> DiscoveryResponse:
         service="project-athena-api",
         version=settings.api_version,
         endpoints={
+            "dashboard": "/dashboard",
             "health": "/health",
             "version": "/version",
             "status": "/status",
@@ -84,6 +94,12 @@ def root() -> DiscoveryResponse:
             "research_summary": "/research/global/summary",
         },
     )
+
+
+@app.get("/dashboard", include_in_schema=False)
+def dashboard() -> FileResponse:
+    """Serve the dependency-free Athena historical research dashboard."""
+    return FileResponse(DASHBOARD_DIR / "index.html", media_type="text/html")
 
 
 app.include_router(health.router)
